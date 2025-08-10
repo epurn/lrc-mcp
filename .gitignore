@@ -1,6 +1,18 @@
 .cursorrules
+.env
 .cursor/
 .venv/
-*/__pycache__/
+**/__pycache__/
+lrc_mcp/adapters/__pycache__/lightroom.cpython-313.pyc
 .resources/
 instructions.md
+
+# Lightroom dev artifacts
+resources/
+catalogs/
+**/*.lrdata/
+**/*.lrcat-
+**/*.lrcat.lock
+plugin/**/CompiledLua/**
+plugin/**/.cache/**
+plugin/lrc-mcp.lrplugin/logs/**
