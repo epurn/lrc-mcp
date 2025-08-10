@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any, Dict, Optional
+import json
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -45,9 +46,19 @@ def create_app() -> FastAPI:
     @app.post("/plugin/heartbeat")
     async def plugin_heartbeat(
         request: Request,
-        payload: HeartbeatPayload,
         _: None = Depends(_require_token),
     ) -> Dict[str, Any]:
+        # Accept both proper JSON objects and a JSON string containing an object (some LrC environments double-encode)
+        raw_bytes = await request.body()
+        try:
+            parsed: Any = json.loads(raw_bytes.decode("utf-8")) if raw_bytes else {}
+            if isinstance(parsed, str):
+                # Handle double-encoded JSON
+                parsed = json.loads(parsed)
+            payload = HeartbeatPayload.model_validate(parsed)
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"invalid payload: {exc}")
+
         store = get_store()
         hb = store.set_heartbeat(
             plugin_version=payload.plugin_version,

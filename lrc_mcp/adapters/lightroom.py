@@ -54,6 +54,25 @@ def launch_lightroom(explicit_path: Optional[str] = None) -> LaunchResult:
     negatives; users can re-use the tool idempotently.
     """
     path = resolve_lightroom_path(explicit_path)
+
+    # Best-effort guard: if Lightroom is already running on Windows, don't spawn a new process
+    if os.name == "nt":
+        try:
+            # Use tasklist to check for Lightroom.exe presence
+            result = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq Lightroom.exe", "/NH"],
+                capture_output=True,
+                text=True,
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            output = (result.stdout or "") + (result.stderr or "")
+            if "Lightroom.exe" in output:
+                return LaunchResult(launched=False, pid=None, path=path)
+        except Exception:
+            # If the guard fails, we proceed to attempt launch.
+            pass
+
     creationflags = 0
     if os.name == "nt":
         # Create new process group; avoid attaching console window

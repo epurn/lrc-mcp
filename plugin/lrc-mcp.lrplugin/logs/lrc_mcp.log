@@ -1,7 +1,0 @@
-2025-08-10T21:59:12Z [PROBE] plugin log write test
-2025-08-10T21:59:12Z [INFO] Init ran; plugin_write_ok=true
-2025-08-10T21:59:12Z [Init] lrc_mcp initialized (plugin logs)
-2025-08-10T22:20:11Z [INIT] direct write before Logger
-2025-08-10T22:22:26Z [INIT] direct write before Logger
-2025-08-10T22:22:26Z [PROBE] plugin log write test
-2025-08-10T22:22:26Z [INFO] lrc_mcp plugin initialized; plugin_write_ok=true
