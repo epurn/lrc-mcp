@@ -1,0 +1,6 @@
+.cursorrules
+.cursor/
+.venv/
+*/__pycache__/
+.resources/
+instructions.md
