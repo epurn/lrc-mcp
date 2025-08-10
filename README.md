@@ -1,6 +1,6 @@
 ## lrc-mcp
 
-Minimal MCP server skeleton exposing a single tool `lrc_mcp_health` over stdio.
+MCP server exposing tools over stdio and a local HTTP heartbeat endpoint for a Lightroom Classic plugin.
 
 ### Requirements
 - Python 3.11+
@@ -19,7 +19,7 @@ pip install -r requirements.txt
 python -m lrc_mcp.main
 ```
 
-### Healthcheck
+### Tools
 - **`lrc_mcp_health`**: basic health check for the MCP server. Returns structured output:
 
 ```json
@@ -30,7 +30,11 @@ python -m lrc_mcp.main
 }
 ```
 
+- **`lrc_launch_lightroom`**: launch Lightroom Classic (Windows). Optional `path` input; otherwise uses `LRCLASSIC_PATH` or default install path. Returns `{ launched, pid, path }`.
+- **`lrc_lightroom_version`**: returns `{ status: "ok"|"waiting", lr_version, last_seen }` based on plugin heartbeat.
+
 ### References
 - MCP docs: https://modelcontextprotocol.io/docs
+ - Lightroom SDK samples: `./resources/LrC_14.3_202504141032-10373aad.release_SDK`
 
 

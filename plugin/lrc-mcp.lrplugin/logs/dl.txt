@@ -1,0 +1,17 @@
+Plug-in error log for plug-in at: D:\Development\lrc-mcp\plugin\lrc-mcp.lrplugin
+
+**** Error 1
+
+An error occurred while attempting to run one of the plug-in’s scripts.
+Init.lua:18: attempt to index global 'package' (a nil value)
+
+**** Error 2
+
+An error occurred while attempting to start the plugin.
+Init.lua:18: attempt to index global 'package' (a nil value)
+
+**** Error 3
+
+Could not add a menu item for this plug-in.
+Init.lua:18: attempt to index global 'package' (a nil value)
+
