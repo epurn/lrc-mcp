@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from ..api.routes import router as plugin_router
+from lrc_mcp.api.routes import router as plugin_router
 
 
 def create_app() -> FastAPI:

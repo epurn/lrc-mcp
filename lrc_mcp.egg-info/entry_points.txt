@@ -1,0 +1,2 @@
+[console_scripts]
+lrc-mcp = lrc_mcp.main:main

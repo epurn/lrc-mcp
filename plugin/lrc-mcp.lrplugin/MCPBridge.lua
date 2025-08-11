@@ -17,18 +17,19 @@ end
 
 local function json_escape(str)
   if str == nil then return nil end
-  -- Escape backslash and double quote first
-  str = str:gsub('\\\\', '\\\\\\\\')
-  str = str:gsub('\"', '\\\\\"')
-  -- Escape control characters
-  str = str:gsub('\\b', '\\\\b')
-  str = str:gsub('\\f', '\\\\f')
-  str = str:gsub('\\n', '\\\\n')
-  str = str:gsub('\\r', '\\\\r')
-  str = str:gsub('\\t', '\\\\t')
-  -- Escape any remaining control chars < 0x20 as \\u00XX
-  str = str:gsub('[%z\\1-\\31]', function(c)
-    return string.format('\\\\u%04X', string.byte(c))
+  -- First escape the backslash itself to avoid double escaping
+  str = str:gsub('\\', '\\\\')
+  -- Then escape the double quote
+  str = str:gsub('"', '\\"')
+  -- Escape common control characters with short escapes
+  str = str:gsub('\b', '\\b')
+  str = str:gsub('\f', '\\f')
+  str = str:gsub('\n', '\\n')
+  str = str:gsub('\r', '\\r')
+  str = str:gsub('\t', '\\t')
+  -- Escape any remaining control chars < 0x20 as \u00XX
+  str = str:gsub('[%z\1-\31]', function(c)
+    return string.format('\\u%04X', string.byte(c))
   end)
   return str
 end

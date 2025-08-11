@@ -15,13 +15,13 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 
-from ..models import (
+from lrc_mcp.models import (
     HeartbeatPayload,
     EnqueuePayload,
     ClaimPayload,
     ResultPayload,
 )
-from ..services.lrc_bridge import get_store, get_queue
+from lrc_mcp.services.lrc_bridge import get_store, get_queue
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ async def _require_token(x_plugin_token: Optional[str] = Header(default=None)) -
 
 def _parse_json_body(raw_bytes: bytes) -> Any:
     """Parse JSON body, handling both proper JSON objects and JSON strings."""
-    from ..utils import parse_json_body
+    from lrc_mcp.utils import parse_json_body
     try:
         return parse_json_body(raw_bytes)
     except ValueError as exc:

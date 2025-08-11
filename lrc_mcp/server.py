@@ -12,8 +12,8 @@ from typing import Any, Dict, List
 import mcp.types as mcp_types
 from mcp.server import Server
 
-from .health import get_health_tool, handle_health_tool
-from .lightroom import (
+from lrc_mcp.health import get_health_tool, handle_health_tool
+from lrc_mcp.lightroom import (
     get_launch_lightroom_tool,
     get_lightroom_version_tool,
     handle_launch_lightroom_tool,

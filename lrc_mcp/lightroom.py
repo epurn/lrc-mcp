@@ -7,8 +7,8 @@ from typing import Any, Dict, List, Optional
 
 import mcp.types as mcp_types
 
-from .adapters.lightroom import launch_lightroom
-from .services.lrc_bridge import get_store
+from lrc_mcp.adapters.lightroom import launch_lightroom
+from lrc_mcp.services.lrc_bridge import get_store
 
 
 def get_launch_lightroom_tool() -> mcp_types.Tool:

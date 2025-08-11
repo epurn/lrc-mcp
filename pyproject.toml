@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lrc-mcp"
+version = "0.1.0"
+description = "MCP server for Lightroom Classic integration"
+readme = "README.md"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"},
+]
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.2.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "python-dotenv>=1.0.1",
+]
+
+[project.scripts]
+lrc-mcp = "lrc_mcp.main:main"
+
+[project.urls]
+Homepage = "https://github.com/epurn/lrc-mcp"
+Repository = "https://github.com/epurn/lrc-mcp"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lrc_mcp*"]
+
+[tool.setuptools.package-data]
+lrc_mcp = ["py.typed"]

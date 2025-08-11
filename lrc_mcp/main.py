@@ -21,9 +21,10 @@ from mcp.server.models import InitializationOptions
 import uvicorn
 from dotenv import load_dotenv
 
-from . import __version__
-from .infra.http import create_app
-from .server import SERVER_NAME, create_server
+from lrc_mcp import __version__
+from lrc_mcp.infra.http import create_app
+from lrc_mcp.server import SERVER_NAME, create_server
+from lrc_mcp.uvicorn_config import UVICORN_CONFIG, DEV_CONFIG
 
 
 async def _run_stdio_server() -> None:
@@ -48,40 +49,7 @@ async def _run_stdio_server() -> None:
 
 async def _run_http_server() -> None:
     app = create_app()
-    port = int(os.getenv("LRC_MCP_HTTP_PORT", "8765"))
-    # Ensure all HTTP server logs go to stderr and avoid noisy access logs to keep MCP stdio clean
-    LOG_CONFIG = {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "default": {
-                "()": "uvicorn.logging.DefaultFormatter",
-                "fmt": "%(levelprefix)s %(message)s",
-                "use_colors": False,
-            }
-        },
-        "handlers": {
-            "default": {
-                "class": "logging.StreamHandler",
-                "formatter": "default",
-                "stream": "ext://sys.stderr",
-            }
-        },
-        "loggers": {
-            "uvicorn": {"handlers": ["default"], "level": "INFO", "propagate": False},
-            "uvicorn.error": {"handlers": ["default"], "level": "INFO", "propagate": False},
-            # Reduce access logs and send them to stderr as well (we also disable via access_log=False)
-            "uvicorn.access": {"handlers": ["default"], "level": "WARNING", "propagate": False},
-        },
-    }
-    config = uvicorn.Config(
-        app,
-        host="127.0.0.1",
-        port=port,
-        log_config=LOG_CONFIG,
-        access_log=False,
-        log_level="info",
-    )
+    config = uvicorn.Config(app, **UVICORN_CONFIG)
     server = uvicorn.Server(config)
     try:
         await server.serve()
@@ -106,5 +74,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
