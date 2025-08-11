@@ -15,7 +15,7 @@ pip install -r requirements.txt
 ```
 
 ### Configure environment
-Create a `.env` file from the example and adjust values as needed:
+Create a `.env` file and adjust values as needed:
 ```
 cp .env.example .env
 ```
@@ -44,16 +44,42 @@ Endpoints for the plugin:
 Notes:
 - Header `X-Plugin-Token` is required when `LRC_MCP_PLUGIN_TOKEN` is set; otherwise accepted in dev.
 - Bridge binds to `127.0.0.1` only (see main.py uvicorn config).
+
 ### Lightroom plugin setup
 1) In Lightroom Classic: File → Plug‑in Manager → Add… → select `plugin/lrc_mcp.lrplugin`.
 2) The plugin runs background tasks that (a) post heartbeats and (b) poll for commands, supporting minimal `noop` and `echo` commands.
 3) Optional: place a raw token string at `%APPDATA%/lrc-mcp/config.json` to authenticate requests when `LRC_MCP_PLUGIN_TOKEN` is set.
 
-After the plugin loads and the server is running, you should see periodic heartbeat logs in the plugin log and server logs. For Step 4, you can enqueue a test `noop` or `echo` command using a temporary script or the soon-to-be-added MCP tools in later steps.
+### Testing
+After the plugin loads and the server is running, you should see periodic heartbeat logs in the plugin log and server logs. Test the command queue functionality:
+
+```bash
+# Test basic command queuing
+python tests/enqueue_echo.py "test message"
+
+# Run comprehensive command queue tests
+python tests/test_command_queue.py
+```
+
+Check the plugin logs at `plugin/lrc-mcp.lrplugin/logs/lrc_mcp.log` to see commands being claimed and completed.
+
+### Project Structure
+```
+lrc_mcp/
+├── adapters/         # External system adapters (Lightroom integration)
+├── http/             # HTTP API routes and handlers
+├── infra/            # Infrastructure setup (FastAPI app)
+├── services/         # Business logic services (command queue, heartbeat)
+├── health.py         # Health check tool
+├── lightroom.py      # Lightroom tools (launch, version)
+├── models.py         # Pydantic data models
+├── server.py         # MCP server setup and tool registration
+├── utils.py          # Common utility functions
+└── main.py          # Application entry point
+tests/               # Test scripts
+plugin/              # Lightroom Classic plugin
+```
+
 ### References
 - MCP docs: https://modelcontextprotocol.io/docs
- - Lightroom SDK samples: `./resources/LrC_14.3_202504141032-10373aad.release_SDK`
-
-
-
-
+- Lightroom SDK samples: `./resources/LrC_14.3_202504141032-10373aad.release_SDK`
