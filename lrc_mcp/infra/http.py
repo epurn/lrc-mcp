@@ -1,80 +1,16 @@
-"""Local FastAPI app exposing a heartbeat endpoint for the LrC plugin.
+"""Local FastAPI app exposing plugin endpoints for the LrC bridge.
 
-This module defines a FastAPI application to receive heartbeat beacons from
-the Lightroom Classic Lua plugin. It is intended to run on localhost only.
+This app binds to localhost only via the uvicorn server in main.py.
 """
 
 from __future__ import annotations
 
-import logging
-import os
-from typing import Any, Dict, Optional
-import json
+from fastapi import FastAPI
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
-from pydantic import BaseModel, Field
-
-from ..services.lrc_bridge import get_store
-
-logger = logging.getLogger(__name__)
-
-
-class HeartbeatPayload(BaseModel):
-    plugin_version: str = Field(..., description="Version of the LrC plugin")
-    lr_version: str = Field(..., description="Detected Lightroom Classic version")
-    catalog_path: Optional[str] = Field(None, description="Path to current catalog")
-    timestamp: Optional[str] = Field(
-        None, description="Plugin-sent ISO-8601 timestamp (optional)")
-
-
-def _get_expected_token() -> Optional[str]:
-    return os.getenv("LRC_MCP_PLUGIN_TOKEN") or None
-
-
-async def _require_token(x_plugin_token: Optional[str] = Header(default=None)) -> None:
-    expected = _get_expected_token()
-    if expected is None:
-        # Dev mode: accept without token
-        return
-    if not x_plugin_token or x_plugin_token != expected:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid plugin token")
+from lrc_mcp.api.routes import router as plugin_router
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="lrc-mcp plugin bridge", docs_url=None, redoc_url=None)
-
-    @app.post("/plugin/heartbeat")
-    async def plugin_heartbeat(
-        request: Request,
-        _: None = Depends(_require_token),
-    ) -> Dict[str, Any]:
-        # Accept both proper JSON objects and a JSON string containing an object (some LrC environments double-encode)
-        raw_bytes = await request.body()
-        try:
-            parsed: Any = json.loads(raw_bytes.decode("utf-8")) if raw_bytes else {}
-            if isinstance(parsed, str):
-                # Handle double-encoded JSON
-                parsed = json.loads(parsed)
-            payload = HeartbeatPayload.model_validate(parsed)
-        except Exception as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"invalid payload: {exc}")
-
-        store = get_store()
-        hb = store.set_heartbeat(
-            plugin_version=payload.plugin_version,
-            lr_version=payload.lr_version,
-            catalog_path=payload.catalog_path,
-            sent_at_iso=payload.timestamp,
-        )
-        logger.info(
-            "heartbeat accepted",
-            extra={
-                "remote": getattr(request.client, "host", None),
-                "lr_version": hb.lr_version,
-            },
-        )
-        return {"status": "ok"}
-
+    app.include_router(plugin_router)
     return app
-
-

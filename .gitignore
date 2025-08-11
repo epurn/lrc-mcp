@@ -1,6 +1,9 @@
 .cursorrules
+.clineignore
 .env
 .cursor/
+.clinerules/
+.continue/*
 .venv/
 **/__pycache__/
 lrc_mcp/adapters/__pycache__/lightroom.cpython-313.pyc
