@@ -11,8 +11,7 @@ MCP server exposing tools over stdio and a local HTTP bridge for a Lightroom Cla
 python -m venv .venv
 . .venv/Scripts/Activate.ps1  # Windows PowerShell
 pip install -U pip
-cd src
-pip install -e .
+pip install -r requirements.txt
 ```
 
 ### Configure environment
@@ -61,10 +60,6 @@ Notes:
 2) The plugin runs background tasks that (a) post heartbeats and (b) poll for commands, supporting minimal `noop` and `echo` commands.
 3) Optional: place a raw token string at `%APPDATA%/lrc-mcp/config.json` to authenticate requests when `LRC_MCP_PLUGIN_TOKEN` is set.
 
-### Recent Changes
-- **Project Structure Update**: Moved Python code to `src/` subdirectory for better organization
-- **Import Fix**: Resolved import errors by installing package in development mode (`pip install -e .`) from the `src` directory
-
 ### Testing
 After the plugin loads and the server is running, you should see periodic heartbeat logs in the plugin log and server logs. Test the command queue functionality:
 
@@ -80,22 +75,21 @@ Check the plugin logs at `plugin/lrc-mcp.lrplugin/logs/lrc_mcp.log` to see comma
 
 ### Project Structure
 ```
-src/
-└── lrc_mcp/
-    ├── adapters/         # External system adapters (Lightroom integration)
-    ├── api/              # HTTP API routes and handlers
-    ├── infra/            # Infrastructure setup (FastAPI app)
-    ├── services/         # Business logic services (command queue, heartbeat)
-    ├── schema/           # Pydantic models
-    ├── health.py         # Health check tool
-    ├── lightroom.py      # Lightroom tools (launch, version)
-    ├── server.py         # MCP server setup and tool registration
-    ├── utils.py          # Common utility functions
-    ├── uvicorn_config.py # Uvicorn deployment configuration
-    ├── http_server.py    # HTTP server entry point for uvicorn
-    └── main.py          # Application entry point
-tests/                   # Test scripts
-plugin/                  # Lightroom Classic plugin
+lrc_mcp/
+├── adapters/         # External system adapters (Lightroom integration)
+├── api/              # HTTP API routes and handlers
+├── infra/            # Infrastructure setup (FastAPI app)
+├── services/         # Business logic services (command queue, heartbeat)
+├── schema/           # Pydantic models
+├── health.py         # Health check tool
+├── lightroom.py      # Lightroom tools (launch, version)
+├── server.py         # MCP server setup and tool registration
+├── utils.py          # Common utility functions
+├── uvicorn_config.py # Uvicorn deployment configuration
+├── http_server.py    # HTTP server entry point for uvicorn
+└── main.py          # Application entry point
+tests/               # Test scripts
+plugin/              # Lightroom Classic plugin
 ```
 
 ### References

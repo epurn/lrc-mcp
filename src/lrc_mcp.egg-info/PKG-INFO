@@ -83,7 +83,7 @@ Notes:
 - Bridge binds to `127.0.0.1` only (see main.py uvicorn config).
 
 ### Lightroom plugin setup
-1) In Lightroom Classic: File → Plug‑in Manager → Add… → select `plugin/lrc_mcp.lrplugin`.
+1) In Lightroom Classic: File → Plug‑in Manager → Add… → select `plugin/lrc-mcp.lrplugin`.
 2) The plugin runs background tasks that (a) post heartbeats and (b) poll for commands, supporting minimal `noop` and `echo` commands.
 3) Optional: place a raw token string at `%APPDATA%/lrc-mcp/config.json` to authenticate requests when `LRC_MCP_PLUGIN_TOKEN` is set.
 
@@ -107,9 +107,9 @@ lrc_mcp/
 ├── api/              # HTTP API routes and handlers
 ├── infra/            # Infrastructure setup (FastAPI app)
 ├── services/         # Business logic services (command queue, heartbeat)
+├── schema/           # Pydantic models
 ├── health.py         # Health check tool
 ├── lightroom.py      # Lightroom tools (launch, version)
-├── models.py         # Pydantic data models
 ├── server.py         # MCP server setup and tool registration
 ├── utils.py          # Common utility functions
 ├── uvicorn_config.py # Uvicorn deployment configuration

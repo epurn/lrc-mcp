@@ -2,12 +2,10 @@ README.md
 pyproject.toml
 setup.py
 lrc_mcp/__init__.py
-lrc_mcp/asgi.py
 lrc_mcp/health.py
 lrc_mcp/http_server.py
 lrc_mcp/lightroom.py
 lrc_mcp/main.py
-lrc_mcp/models.py
 lrc_mcp/server.py
 lrc_mcp/utils.py
 lrc_mcp/uvicorn_config.py
@@ -23,6 +21,6 @@ lrc_mcp/api/__init__.py
 lrc_mcp/api/routes.py
 lrc_mcp/infra/__init__.py
 lrc_mcp/infra/http.py
+lrc_mcp/schema/models.py
 lrc_mcp/services/__init__.py
 lrc_mcp/services/lrc_bridge.py
-tests/test_command_queue.py
