@@ -1,8 +1,7 @@
 """Adapter utilities for launching Lightroom Classic on Windows.
 
-This module discovers the Lightroom Classic executable and launches it if not
-already running. The implementation is Windows-first and conservative.
-"""
+This module discovers the Lightroom Classic executable and launches it using
+an external launcher that handles job object isolation for maximum compatibility."""
 
 from __future__ import annotations
 
@@ -18,42 +17,6 @@ from typing import Optional, Tuple
 
 DEFAULT_WINDOWS_PATH = r"C:\Program Files\Adobe\Adobe Lightroom Classic\Lightroom.exe"
 logger = logging.getLogger(__name__)
-
-# Windows job/process diagnostics and helpers
-def _is_current_process_in_job() -> Optional[bool]:
-    """
-    Best-effort check whether the current process is running inside a Job object (Windows-only).
-
-    Returns:
-        True if in a job, False if not, None if undetectable or non-Windows.
-    """
-    if os.name != "nt":
-        return None
-    try:
-        import ctypes
-        from ctypes import wintypes
-
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        IsProcessInJob = kernel32.IsProcessInJob
-        IsProcessInJob.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
-        IsProcessInJob.restype = wintypes.BOOL
-
-        bool_in_job = wintypes.BOOL()
-        current_process = ctypes.c_void_p(-1)  # GetCurrentProcess() pseudo-handle
-        if not IsProcessInJob(current_process, None, ctypes.byref(bool_in_job)):
-            return None
-        return bool(bool_in_job.value)
-    except Exception:
-        return None
-
-
-def _log_job_status() -> None:
-    """Log whether the current process appears to be inside a job."""
-    status = _is_current_process_in_job()
-    if status is None:
-        logger.info("job status: undetectable or non-Windows")
-    else:
-        logger.info(f"job status: in_job={status}")
 
 
 def _query_tasklist_lightroom() -> str:
@@ -96,26 +59,46 @@ def _is_lightroom_running() -> Tuple[bool, Optional[int]]:
     return False, None
 
 
-def _launch_via_explorer(path: str) -> None:
+def _launch_via_external_launcher(path: str) -> None:
     """
-    Attempt to launch Lightroom by delegating to explorer.exe so the shell
-    (outside the MCP host job) performs the execution. PID is not reliable.
+    Launch Lightroom using the external launcher script that handles
+    job object isolation and multiple launch strategies.
     """
     if os.name != "nt":
         return
+    
+    logger.info(f"Launching Lightroom via external launcher: {path}")
+    
+    # Find the external launcher script
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    launcher_path = os.path.join(project_root, "launch_lightroom_external.py")
+    
+    # Validate paths
+    if not os.path.exists(launcher_path):
+        logger.error(f"External launcher not found: {launcher_path}")
+        raise FileNotFoundError(f"External launcher not found: {launcher_path}")
+        
+    if not os.path.exists(path) or not os.path.isfile(path):
+        logger.error(f"Lightroom executable not found: {path}")
+        raise FileNotFoundError(f"Lightroom executable not found: {path}")
+    
+    # Launch the external launcher
+    cmd = [sys.executable, launcher_path, path]
+    logger.info(f"Executing external launcher: {cmd}")
+    
     try:
-        logger.warning("falling back to explorer.exe launch")
         subprocess.Popen(
-            ["explorer.exe", path],
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            cmd,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             close_fds=True,
             shell=False,
         )
+        logger.info("External launcher started successfully")
     except Exception as exc:
-        logger.error(f"explorer.exe fallback failed: {exc}")
+        logger.error(f"Failed to start external launcher: {exc}", exc_info=True)
+        raise
 
 
 @dataclass(frozen=True)
@@ -152,16 +135,14 @@ def resolve_lightroom_path(explicit_path: Optional[str] = None) -> str:
 
 
 def launch_lightroom(explicit_path: Optional[str] = None) -> LaunchResult:
-    """Launch Lightroom Classic if possible.
+    """Launch Lightroom Classic using external launcher for maximum compatibility.
 
     Returns a `LaunchResult` indicating whether a new process was spawned.
-    A best-effort duplicate-run guard is not implemented here to avoid false
-    negatives; users can re-use the tool idempotently.
+    Uses an external launcher script that handles job object isolation.
     """
     try:
         path = resolve_lightroom_path(explicit_path)
         logger.info(f"Resolved Lightroom path: {path}")
-        _log_job_status()
         
         # Validate that the executable exists
         if not os.path.exists(path):
@@ -170,44 +151,36 @@ def launch_lightroom(explicit_path: Optional[str] = None) -> LaunchResult:
         if not os.path.isfile(path):
             raise FileNotFoundError(f"Lightroom path is not a file: {path}")
 
-        # Best-effort guard: if Lightroom is already running on Windows, don't spawn a new process
+        # Check if Lightroom is already running
         if os.name == "nt":
             try:
-                # Use tasklist to check for Lightroom.exe presence
-                logger.info("Checking if Lightroom is already running...")
-                result = subprocess.run(
-                    ["tasklist", "/FI", "IMAGENAME eq Lightroom.exe", "/NH"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                )
-                output = (result.stdout or "") + (result.stderr or "")
-                logger.info(f"Tasklist output: {output}")
-                if "Lightroom.exe" in output:
-                    logger.info("Lightroom is already running, not launching new instance")
-                    return LaunchResult(launched=False, pid=None, path=path)
+                running, existing_pid = _is_lightroom_running()
+                if running:
+                    logger.info(f"Lightroom is already running (PID: {existing_pid}), not launching new instance")
+                    return LaunchResult(launched=False, pid=existing_pid, path=path)
             except Exception as e:
                 logger.warning(f"Failed to check if Lightroom is running: {e}")
-                # If the guard fails, we proceed to attempt launch.
+                # If the check fails, proceed with launch attempt
 
-        # Launch Lightroom via explorer.exe to ensure persistence beyond job termination
-        logger.info(f"Launching Lightroom via explorer.exe: {path}")
+        # Launch Lightroom via external launcher
+        logger.info(f"Launching Lightroom via external launcher: {path}")
         try:
-            _launch_via_explorer(path)
-            logger.info("Launched Lightroom via explorer.exe (PID not available)")
+            _launch_via_external_launcher(path)
+            logger.info("External launcher completed")
+            
             # Give it a moment to start
             time.sleep(5)
+            
             # Verify it's running
             running, pid = _is_lightroom_running()
             if running:
-                logger.info(f"Lightroom is running after explorer launch (PID: {pid})")
+                logger.info(f"Lightroom is running after launch (PID: {pid})")
                 return LaunchResult(launched=True, pid=pid, path=path)
             else:
-                logger.warning("Lightroom may not have started after explorer launch")
+                logger.warning("Lightroom may not have started yet (this can be normal)")
                 return LaunchResult(launched=True, pid=None, path=path)
         except Exception as e:
-            logger.error(f"Failed to launch Lightroom via explorer.exe: {e}")
+            logger.error(f"Failed to launch Lightroom: {e}")
             raise
         
     except Exception as e:
