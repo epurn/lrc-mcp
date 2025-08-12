@@ -60,6 +60,8 @@ function MCPBridge.start()
             cmdOk, resultTable, errMsg = CommandHandlers.handle_echo_command(cmd.payload_raw)
           elseif cmd.type == 'collection.create' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_create_collection_command(cmd.payload_raw)
+          elseif cmd.type == 'collection_set.create' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_create_collection_set_command(cmd.payload_raw)
           elseif cmd.type == 'collection.remove' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_remove_collection_command(cmd.payload_raw)
           elseif cmd.type == 'collection.edit' then

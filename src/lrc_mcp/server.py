@@ -21,9 +21,11 @@ from lrc_mcp.lightroom import (
 )
 from lrc_mcp.adapters.collections import (
     get_add_collection_tool,
+    get_add_collection_set_tool,
     get_remove_collection_tool,
     get_edit_collection_tool,
     handle_add_collection_tool,
+    handle_add_collection_set_tool,
     handle_remove_collection_tool,
     handle_edit_collection_tool,
 )
@@ -52,6 +54,7 @@ def create_server(version: str) -> Server:
             get_launch_lightroom_tool(),
             get_lightroom_version_tool(),
             get_add_collection_tool(),
+            get_add_collection_set_tool(),
             get_remove_collection_tool(),
             get_edit_collection_tool(),
         ]
@@ -69,6 +72,8 @@ def create_server(version: str) -> Server:
             return handle_lightroom_version_tool()
         if name == "lrc_add_collection":
             return handle_add_collection_tool(arguments)
+        if name == "lrc_add_collection_set":
+            return handle_add_collection_set_tool(arguments)
         if name == "lrc_remove_collection":
             return handle_remove_collection_tool(arguments)
         if name == "lrc_edit_collection":

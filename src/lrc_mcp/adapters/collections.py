@@ -53,14 +53,14 @@ def get_add_collection_tool() -> mcp_types.Tool:
     """Get the add collection tool definition."""
     return mcp_types.Tool(
         name="lrc_add_collection",
-        description="Create a new collection in Lightroom Classic.",
+        description="Create a new collection in Lightroom Classic. Parent collection sets must already exist.",
         inputSchema={
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Name of the collection to create"},
                 "parent_path": {
                     "type": ["string", "null"], 
-                    "description": "Parent collection path (e.g., 'Sets/Nature'; null or '' means root)"
+                    "description": "Parent collection set path (e.g., 'Sets/Nature'; null or '' means root). Parent sets must already exist."
                 },
                 "wait_timeout_sec": {
                     "type": ["number", "null"],
@@ -90,6 +90,52 @@ def get_add_collection_tool() -> mcp_types.Tool:
                 "error": {"type": ["string", "null"]}
             },
             "required": ["status", "created", "collection", "command_id", "error"],
+            "additionalProperties": False,
+        },
+    )
+
+
+def get_add_collection_set_tool() -> mcp_types.Tool:
+    """Get the add collection set tool definition."""
+    return mcp_types.Tool(
+        name="lrc_add_collection_set",
+        description="Create a new collection set in Lightroom Classic. Parent collection sets must already exist.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Name of the collection set to create"},
+                "parent_path": {
+                    "type": ["string", "null"], 
+                    "description": "Parent collection set path (e.g., 'Sets/Nature'; null or '' means root). Parent sets must already exist."
+                },
+                "wait_timeout_sec": {
+                    "type": ["number", "null"],
+                    "minimum": 0,
+                    "description": "Wait timeout in seconds (default 5; 0 to return immediately)"
+                }
+            },
+            "required": ["name"],
+            "additionalProperties": False,
+        },
+        outputSchema={
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["ok", "pending", "error"]},
+                "created": {"type": ["boolean", "null"]},
+                "collection_set": {
+                    "type": ["object", "null"],
+                    "properties": {
+                        "id": {"type": ["string", "null"]},
+                        "name": {"type": "string"},
+                        "path": {"type": "string"}
+                    },
+                    "required": ["id", "name", "path"],
+                    "additionalProperties": False
+                },
+                "command_id": {"type": ["string", "null"]},
+                "error": {"type": ["string", "null"]}
+            },
+            "required": ["status", "created", "collection_set", "command_id", "error"],
             "additionalProperties": False,
         },
     )
@@ -399,6 +445,81 @@ def handle_edit_collection_tool(arguments: Dict[str, Any] | None) -> Dict[str, A
             "status": "pending",
             "updated": None,
             "collection": None,
+            "command_id": command_id,
+            "error": None
+        }
+
+
+def handle_add_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
+    """Handle the add collection set tool call."""
+    # Check if Lightroom is running first
+    dependency_error = _check_lightroom_dependency()
+    if dependency_error:
+        return dependency_error
+    
+    if not arguments:
+        return {"status": "error", "created": None, "collection_set": None, "command_id": None, "error": "No arguments provided"}
+    
+    name = arguments.get("name")
+    if not name or not isinstance(name, str):
+        return {"status": "error", "created": None, "collection_set": None, "command_id": None, "error": "Collection set name is required"}
+    
+    parent_path = arguments.get("parent_path")
+    if parent_path is not None and not isinstance(parent_path, str):
+        parent_path = None
+    
+    wait_timeout_sec = arguments.get("wait_timeout_sec")
+    if wait_timeout_sec is not None:
+        if not isinstance(wait_timeout_sec, (int, float)) or wait_timeout_sec < 0:
+            wait_timeout_sec = 5  # reduced default timeout
+    else:
+        wait_timeout_sec = 5  # reduced default timeout
+    
+    # Enqueue the command
+    queue = get_queue()
+    payload = {
+        "name": name,
+        "parent_path": parent_path
+    }
+    command_id = queue.enqueue(
+        type="collection_set.create",
+        payload=payload
+    )
+    
+    # Wait for result if timeout > 0
+    if wait_timeout_sec > 0:
+        result = queue.wait_for_result(command_id, wait_timeout_sec)
+        if result is None:
+            # Timeout - return pending
+            return {
+                "status": "pending",
+                "created": None,
+                "collection_set": None,
+                "command_id": command_id,
+                "error": None
+            }
+        elif result.ok and result.result:
+            return {
+                "status": "ok",
+                "created": result.result.get("created"),
+                "collection_set": result.result.get("collection_set"),
+                "command_id": command_id,
+                "error": None
+            }
+        else:
+            return {
+                "status": "error",
+                "created": None,
+                "collection_set": None,
+                "command_id": command_id,
+                "error": result.error or "Unknown error"
+            }
+    else:
+        # Return immediately
+        return {
+            "status": "pending",
+            "created": None,
+            "collection_set": None,
             "command_id": command_id,
             "error": None
         }

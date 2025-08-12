@@ -42,8 +42,8 @@ uvicorn lrc_mcp.http_server:app --host 127.0.0.1 --port 8765 --reload
 
 ### Tools
 - `lrc_mcp_health`: basic health check for the MCP server. Returns structured output: `{ status, serverTime, version }`.
-- `lrc_launch_lightroom`: launch Lightroom Classic (Windows). Optional `path` input; otherwise uses `LRCLASSIC_PATH` or default install path. Returns `{ launched, pid, path }`.
-- `lrc_lightroom_version`: returns `{ status: "ok"|"waiting", lr_version, last_seen }` based on plugin heartbeat.
+- `lrc_launch_lightroom`: launch Lightroom Classic (Windows). Optional `path` input; otherwise uses `LRCLASSIC_PATH` or default install path. Returns `{ launched, pid, path }`. On Windows, uses explorer.exe launch to ensure persistence beyond host job termination.
+- `lrc_lightroom_version`: returns `{ status: "ok"|"waiting", lr_version, last_seen }` based on plugin heartbeat. **Important:** Always wait for `status: "ok"` before using other Lightroom tools.
 - `lrc_add_collection`: create a new collection in Lightroom. **Requires Lightroom to be running.** Input: `{ name, parent_path, wait_timeout_sec }`. Returns `{ status, created, collection, command_id, error }`.
 - `lrc_remove_collection`: remove a collection from Lightroom. **Requires Lightroom to be running.** Input: `{ collection_path, wait_timeout_sec }`. Returns `{ status, removed, command_id, error }`.
 - `lrc_edit_collection`: edit (rename/move) a collection in Lightroom. **Requires Lightroom to be running.** Input: `{ collection_path, new_name, new_parent_path, wait_timeout_sec }`. Returns `{ status, updated, collection, command_id, error }`.
@@ -83,9 +83,22 @@ python tests/test_collections.py
 
 # Test Lightroom dependency checking
 python tests/test_lightroom_dependency.py
+
+# Test Lightroom persistence beyond LLM timeouts (Windows)
+python tests/test_lightroom_persistence.py
 ```
 
 Check the plugin logs at `plugin/lrc-mcp.lrplugin/logs/lrc_mcp.log` to see commands being claimed and completed.
+
+#### Windows Job Object Considerations
+When launched via MCP tools from certain hosts (like LLM applications), the lrc-mcp server may run inside a Windows Job object that terminates child processes when the job closes. This can cause Lightroom to crash ~30 seconds after launch.
+
+The `lrc_launch_lightroom` tool addresses this by using `explorer.exe` to launch Lightroom, which runs outside the host job context and ensures persistence beyond tool call completion.
+
+**Operational Procedure:**
+- Always wait for `lrc_lightroom_version` to return `status: "ok"` before using other Lightroom tools
+- Lightroom typically takes 15-20 seconds to fully start and establish plugin communication
+- The persistence test script validates behavior beyond typical LLM tool timeout windows
 
 ### Project Structure
 ```
