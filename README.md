@@ -73,19 +73,57 @@ After the plugin loads and the server is running, you should see periodic heartb
 
 ```bash
 # Test basic command queuing
-python tests/enqueue_echo.py "test message"
+python tests/functional/enqueue_echo.py "test message"
 
 # Run comprehensive command queue tests
-python tests/test_command_queue.py
+python tests/functional/test_command_queue.py
 
 # Test collection management commands
-python tests/test_collections.py
+python tests/functional/test_collections.py
 
 # Test Lightroom dependency checking
-python tests/test_lightroom_dependency.py
+python tests/functional/test_lightroom_dependency.py
 
 # Test Lightroom persistence beyond LLM timeouts (Windows)
-python tests/test_lightroom_persistence.py
+python tests/functional/test_lightroom_persistence.py
+```
+
+#### Unit Tests
+The project now includes comprehensive unit tests that can be run without external dependencies:
+
+```bash
+# Run unit tests only
+pytest tests/unit -v
+
+# Run integration tests
+pytest tests/integration -v
+
+# Run functional tests
+pytest tests/functional -v
+
+# Run all tests
+pytest tests -v
+
+# Run tests with coverage report
+pytest tests --cov=src/lrc_mcp --cov-report=html --cov-report=term
+```
+
+Or use the test runner script:
+```bash
+# Run unit tests
+python tests/run_tests.py unit
+
+# Run integration tests
+python tests/run_tests.py integration
+
+# Run functional tests
+python tests/run_tests.py functional
+
+# Run all tests
+python tests/run_tests.py all
+
+# Run with coverage
+python tests/run_tests.py coverage
 ```
 
 Check the plugin logs at `plugin/lrc-mcp.lrplugin/logs/lrc_mcp.log` to see commands being claimed and completed.

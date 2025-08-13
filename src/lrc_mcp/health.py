@@ -34,8 +34,12 @@ def get_health_tool() -> mcp_types.Tool:
 
 def handle_health_tool(version: str) -> Dict[str, Any]:
     """Handle the health check tool call."""
+    # Use timezone-aware datetime but format without timezone suffix to match expected "Z" format
+    dt = _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0)
+    # Remove the timezone suffix and add "Z" to indicate UTC
+    server_time = dt.isoformat().replace('+00:00', '') + "Z"
     return {
         "status": "ok",
-        "serverTime": _dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "serverTime": server_time,
         "version": version,
     }
