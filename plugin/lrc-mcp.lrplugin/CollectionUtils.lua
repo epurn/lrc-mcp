@@ -12,6 +12,7 @@ function CollectionUtils.parse_json_string(str)
 end
 
 function CollectionUtils.find_collection_set(catalog, path)
+  -- Handle nil, empty string, or missing path - all mean root level (catalog)
   if not path or path == '' then
     return catalog
   end
@@ -39,6 +40,7 @@ function CollectionUtils.find_collection_set(catalog, path)
 end
 
 function CollectionUtils.get_collection_set_path_for_creation(catalog, path)
+  -- Handle nil, empty string, or missing path - all mean root level (catalog)
   if not path or path == '' then
     return catalog, {}
   end
@@ -92,6 +94,7 @@ function CollectionUtils.create_missing_collection_sets(catalog, to_create)
 end
 
 function CollectionUtils.find_collection_by_path(catalog, path)
+  -- Handle nil, empty string, or missing path - all mean no collection can be found
   if not path or path == '' then
     return nil
   end

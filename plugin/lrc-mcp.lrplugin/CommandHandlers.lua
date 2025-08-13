@@ -97,10 +97,14 @@ function CommandHandlers.handle_create_collection_set_command(payload_raw)
       Logger.info('parent type: ' .. type(parent))
       Logger.info('parent has createCollectionSet method: ' .. tostring(type(parent.createCollectionSet)))
       
+      -- For root-level collection sets, parent should be nil, not the catalog object
+      local collection_set_parent = (parent ~= catalog) and parent or nil
+      
       -- Check if collection set already exists
       local existing = nil
-      Logger.info('Searching for existing collection set in: ' .. tostring(parent))
-      local child_sets = parent:getChildCollectionSets()
+      local search_parent = collection_set_parent or catalog
+      Logger.info('Searching for existing collection set in: ' .. tostring(search_parent))
+      local child_sets = search_parent:getChildCollectionSets()
       Logger.info('getChildCollectionSets result: ' .. tostring(child_sets))
       Logger.info('getChildCollectionSets type: ' .. type(child_sets))
       
@@ -118,13 +122,14 @@ function CommandHandlers.handle_create_collection_set_command(payload_raw)
         created_collection_set = existing
         created = false
       else
-        Logger.info('Creating new collection set: ' .. name .. ' under parent: ' .. tostring(parent))
-        if not parent then
-          Logger.info('ERROR: parent is nil when trying to create collection set')
-          error('parent is nil when trying to create collection set')
+        Logger.info('Creating new collection set: ' .. name .. ' under parent: ' .. tostring(collection_set_parent))
+        if collection_set_parent then
+          Logger.info('Creating collection set with parent collection set: ' .. tostring(collection_set_parent))
+        else
+          Logger.info('Creating collection set at root level (parent = nil)')
         end
-        Logger.info('About to call parent:createCollectionSet(name)')
-        created_collection_set = parent:createCollectionSet(name)
+        Logger.info('About to call catalog:createCollectionSet(name, parent)')
+        created_collection_set = catalog:createCollectionSet(name, collection_set_parent)
         created = true
         Logger.info('Created collection set result: ' .. tostring(created_collection_set))
         Logger.info('Created collection set type: ' .. type(created_collection_set))
@@ -285,12 +290,15 @@ function CommandHandlers.handle_create_collection_command(payload_raw)
         created = false
       else
         Logger.info('Creating new collection: ' .. name .. ' under parent: ' .. tostring(parent))
-        if not parent then
-          Logger.info('ERROR: parent is nil when trying to create collection')
-          error('parent is nil when trying to create collection')
+        -- For root-level collections, parent should be nil, not the catalog object
+        local collection_parent = (parent ~= catalog) and parent or nil
+        if collection_parent then
+          Logger.info('Creating collection with parent collection set: ' .. tostring(collection_parent))
+        else
+          Logger.info('Creating collection at root level (parent = nil)')
         end
-        Logger.info('About to call catalog:createCollection(name, parent)')
-        created_collection = catalog:createCollection(name, parent)
+        Logger.info('About to call catalog:createCollection(name, parent, true)')
+        created_collection = catalog:createCollection(name, collection_parent, true)
         created = true
         Logger.info('Created collection result: ' .. tostring(created_collection))
         Logger.info('Created collection type: ' .. type(created_collection))
@@ -532,7 +540,6 @@ function CommandHandlers.handle_edit_collection_command(payload_raw)
         result = { updated = false, collection = nil }
         task_success = true
         task_completed = true
-        WriteLock.release_write_lock('Edit Collection')
         return
       end
       
@@ -570,24 +577,38 @@ function CommandHandlers.handle_edit_collection_command(payload_raw)
     
     -- Re-fetch the collection after write operation to get updated information
     local re_fetched_collection = nil
-    local final_name = target_name
     local search_path = collection_path
     
     -- If the collection was renamed or moved, we need to find it at its new location
     if updated then
-      -- Reconstruct the new path if moved
-      if new_parent_path ~= nil then
-        if new_parent_path == '' or new_parent_path == nil then
-          search_path = target_name  -- Moved to root
+      -- Get the current name of the collection (it might have been renamed)
+      -- We need to re-find the collection to get the updated name
+      local target_collection = CollectionUtils.find_collection_by_path(catalog, collection_path)
+      if target_collection then
+        local current_name = target_collection:getName()
+        
+        -- Reconstruct the new path if moved
+        if new_parent_path ~= nil then
+          if new_parent_path == '' or new_parent_path == nil then
+            search_path = current_name  -- Moved to root
+          else
+            search_path = new_parent_path .. "/" .. current_name  -- Moved to new parent
+          end
         else
-          search_path = new_parent_path .. "/" .. target_name  -- Moved to new parent
+          -- Only renamed, not moved - reconstruct path with new name
+          -- We need to find the parent path and append the new name
+          local parent = target_collection:getParent()
+          if parent and parent ~= catalog then
+            local parent_path = CollectionUtils.get_collection_path(catalog, parent)
+            search_path = parent_path .. "/" .. current_name
+          else
+            search_path = current_name  -- At root level
+          end
         end
-      else
-        search_path = collection_path  -- Not moved, keep original path structure
+        re_fetched_collection = CollectionUtils.find_collection_by_path(catalog, search_path)
       end
-      re_fetched_collection = CollectionUtils.find_collection_by_path(catalog, search_path)
     else
-      re_fetched_collection = target_collection
+      re_fetched_collection = CollectionUtils.find_collection_by_path(catalog, collection_path)
     end
     
     if re_fetched_collection then
