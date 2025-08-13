@@ -11,7 +11,8 @@ MCP server exposing tools over stdio and a local HTTP bridge for a Lightroom Cla
 python -m venv .venv
 . .venv/Scripts/Activate.ps1  # Windows PowerShell
 pip install -U pip
-pip install -r requirements.txt
+cd src
+pip install -e .
 ```
 
 ### Configure environment
@@ -41,8 +42,11 @@ uvicorn lrc_mcp.http_server:app --host 127.0.0.1 --port 8765 --reload
 
 ### Tools
 - `lrc_mcp_health`: basic health check for the MCP server. Returns structured output: `{ status, serverTime, version }`.
-- `lrc_launch_lightroom`: launch Lightroom Classic (Windows). Optional `path` input; otherwise uses `LRCLASSIC_PATH` or default install path. Returns `{ launched, pid, path }`.
-- `lrc_lightroom_version`: returns `{ status: "ok"|"waiting", lr_version, last_seen }` based on plugin heartbeat.
+- `lrc_launch_lightroom`: launch Lightroom Classic (Windows). Optional `path` input; otherwise uses `LRCLASSIC_PATH` or default install path. Returns `{ launched, pid, path }`. On Windows, uses explorer.exe launch to ensure persistence beyond host job termination.
+- `lrc_lightroom_version`: returns `{ status: "ok"|"waiting", lr_version, last_seen }` based on plugin heartbeat. **Important:** Always wait for `status: "ok"` before using other Lightroom tools.
+- `lrc_add_collection`: create a new collection in Lightroom. **Requires Lightroom to be running.** Input: `{ name, parent_path, wait_timeout_sec }`. Returns `{ status, created, collection, command_id, error }`.
+- `lrc_remove_collection`: remove a collection from Lightroom. **Requires Lightroom to be running.** Input: `{ collection_path, wait_timeout_sec }`. Returns `{ status, removed, command_id, error }`.
+- `lrc_edit_collection`: edit (rename/move) a collection in Lightroom. **Requires Lightroom to be running.** Input: `{ collection_path, new_name, new_parent_path, wait_timeout_sec }`. Returns `{ status, updated, collection, command_id, error }`.
 
 ### HTTP bridge (Step 4 foundation)
 Endpoints for the plugin:
@@ -60,8 +64,9 @@ Notes:
 2) The plugin runs background tasks that (a) post heartbeats and (b) poll for commands, supporting minimal `noop` and `echo` commands.
 3) Optional: place a raw token string at `%APPDATA%/lrc-mcp/config.json` to authenticate requests when `LRC_MCP_PLUGIN_TOKEN` is set.
 
-### Recent Fixes
-- **JSON Escaping Fix**: Corrected the `json_escape` function in `plugin/lrc-mcp.lrplugin/MCPBridge.lua` to properly escape control characters (1-31) without double-escaping issues. The function now correctly handles backslashes, double quotes, and control characters in the proper order.
+### Recent Changes
+- **Project Structure Update**: Moved Python code to `src/` subdirectory for better organization
+- **Import Fix**: Resolved import errors by installing package in development mode (`pip install -e .`) from the `src` directory
 
 ### Testing
 After the plugin loads and the server is running, you should see periodic heartbeat logs in the plugin log and server logs. Test the command queue functionality:
@@ -72,27 +77,47 @@ python tests/enqueue_echo.py "test message"
 
 # Run comprehensive command queue tests
 python tests/test_command_queue.py
+
+# Test collection management commands
+python tests/test_collections.py
+
+# Test Lightroom dependency checking
+python tests/test_lightroom_dependency.py
+
+# Test Lightroom persistence beyond LLM timeouts (Windows)
+python tests/test_lightroom_persistence.py
 ```
 
 Check the plugin logs at `plugin/lrc-mcp.lrplugin/logs/lrc_mcp.log` to see commands being claimed and completed.
 
+#### Windows Job Object Considerations
+When launched via MCP tools from certain hosts (like LLM applications), the lrc-mcp server may run inside a Windows Job object that terminates child processes when the job closes. This can cause Lightroom to crash ~30 seconds after launch.
+
+The `lrc_launch_lightroom` tool addresses this by using `explorer.exe` to launch Lightroom, which runs outside the host job context and ensures persistence beyond tool call completion.
+
+**Operational Procedure:**
+- Always wait for `lrc_lightroom_version` to return `status: "ok"` before using other Lightroom tools
+- Lightroom typically takes 15-20 seconds to fully start and establish plugin communication
+- The persistence test script validates behavior beyond typical LLM tool timeout windows
+
 ### Project Structure
 ```
-lrc_mcp/
-├── adapters/         # External system adapters (Lightroom integration)
-├── api/              # HTTP API routes and handlers
-├── infra/            # Infrastructure setup (FastAPI app)
-├── services/         # Business logic services (command queue, heartbeat)
-├── health.py         # Health check tool
-├── lightroom.py      # Lightroom tools (launch, version)
-├── models.py         # Pydantic data models
-├── server.py         # MCP server setup and tool registration
-├── utils.py          # Common utility functions
-├── uvicorn_config.py # Uvicorn deployment configuration
-├── http_server.py    # HTTP server entry point for uvicorn
-└── main.py          # Application entry point
-tests/               # Test scripts
-plugin/              # Lightroom Classic plugin
+src/
+└── lrc_mcp/
+    ├── adapters/         # External system adapters (Lightroom integration)
+    ├── api/              # HTTP API routes and handlers
+    ├── infra/            # Infrastructure setup (FastAPI app)
+    ├── services/         # Business logic services (command queue, heartbeat)
+    ├── schema/           # Pydantic models
+    ├── health.py         # Health check tool
+    ├── lightroom.py      # Lightroom tools (launch, version)
+    ├── server.py         # MCP server setup and tool registration
+    ├── utils.py          # Common utility functions
+    ├── uvicorn_config.py # Uvicorn deployment configuration
+    ├── http_server.py    # HTTP server entry point for uvicorn
+    └── main.py          # Application entry point
+tests/                   # Test scripts
+plugin/                  # Lightroom Classic plugin
 ```
 
 ### References

@@ -1,30 +1,3 @@
-Metadata-Version: 2.4
-Name: lrc-mcp
-Version: 0.1.0
-Summary: MCP server for Lightroom Classic integration
-Home-page: https://github.com/epurn/lrc-mcp
-Author: Your Name
-Author-email: Your Name <your.email@example.com>
-License: MIT
-Project-URL: Homepage, https://github.com/epurn/lrc-mcp
-Project-URL: Repository, https://github.com/epurn/lrc-mcp
-Classifier: Development Status :: 3 - Alpha
-Classifier: Intended Audience :: Developers
-Classifier: License :: OSI Approved :: MIT License
-Classifier: Operating System :: OS Independent
-Classifier: Programming Language :: Python :: 3
-Classifier: Programming Language :: Python :: 3.11
-Classifier: Programming Language :: Python :: 3.12
-Requires-Python: >=3.11
-Description-Content-Type: text/markdown
-Requires-Dist: mcp>=1.2.0
-Requires-Dist: fastapi>=0.115
-Requires-Dist: uvicorn>=0.30
-Requires-Dist: python-dotenv>=1.0.1
-Dynamic: author
-Dynamic: home-page
-Dynamic: requires-python
-
 ## lrc-mcp
 
 MCP server exposing tools over stdio and a local HTTP bridge for a Lightroom Classic plugin (heartbeat + command queue).
@@ -70,6 +43,9 @@ uvicorn lrc_mcp.http_server:app --host 127.0.0.1 --port 8765 --reload
 - `lrc_mcp_health`: basic health check for the MCP server. Returns structured output: `{ status, serverTime, version }`.
 - `lrc_launch_lightroom`: launch Lightroom Classic (Windows). Optional `path` input; otherwise uses `LRCLASSIC_PATH` or default install path. Returns `{ launched, pid, path }`.
 - `lrc_lightroom_version`: returns `{ status: "ok"|"waiting", lr_version, last_seen }` based on plugin heartbeat.
+- `lrc_add_collection`: create a new collection in Lightroom. **Requires Lightroom to be running.** Input: `{ name, parent_path, wait_timeout_sec }`. Returns `{ status, created, collection, command_id, error }`.
+- `lrc_remove_collection`: remove a collection from Lightroom. **Requires Lightroom to be running.** Input: `{ collection_path, wait_timeout_sec }`. Returns `{ status, removed, command_id, error }`.
+- `lrc_edit_collection`: edit (rename/move) a collection in Lightroom. **Requires Lightroom to be running.** Input: `{ collection_path, new_name, new_parent_path, wait_timeout_sec }`. Returns `{ status, updated, collection, command_id, error }`.
 
 ### HTTP bridge (Step 4 foundation)
 Endpoints for the plugin:
@@ -83,7 +59,7 @@ Notes:
 - Bridge binds to `127.0.0.1` only (see main.py uvicorn config).
 
 ### Lightroom plugin setup
-1) In Lightroom Classic: File → Plug‑in Manager → Add… → select `plugin/lrc_mcp.lrplugin`.
+1) In Lightroom Classic: File → Plug‑in Manager → Add… → select `plugin/lrc-mcp.lrplugin`.
 2) The plugin runs background tasks that (a) post heartbeats and (b) poll for commands, supporting minimal `noop` and `echo` commands.
 3) Optional: place a raw token string at `%APPDATA%/lrc-mcp/config.json` to authenticate requests when `LRC_MCP_PLUGIN_TOKEN` is set.
 
@@ -96,6 +72,12 @@ python tests/enqueue_echo.py "test message"
 
 # Run comprehensive command queue tests
 python tests/test_command_queue.py
+
+# Test collection management commands
+python tests/test_collections.py
+
+# Test Lightroom dependency checking
+python tests/test_lightroom_dependency.py
 ```
 
 Check the plugin logs at `plugin/lrc-mcp.lrplugin/logs/lrc_mcp.log` to see commands being claimed and completed.
@@ -107,9 +89,9 @@ lrc_mcp/
 ├── api/              # HTTP API routes and handlers
 ├── infra/            # Infrastructure setup (FastAPI app)
 ├── services/         # Business logic services (command queue, heartbeat)
+├── schema/           # Pydantic models
 ├── health.py         # Health check tool
 ├── lightroom.py      # Lightroom tools (launch, version)
-├── models.py         # Pydantic data models
 ├── server.py         # MCP server setup and tool registration
 ├── utils.py          # Common utility functions
 ├── uvicorn_config.py # Uvicorn deployment configuration

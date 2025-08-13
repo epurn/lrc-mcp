@@ -107,7 +107,7 @@ end
 
 function M.debug(...)
   local msg = table.concat({ ... }, ' ')
-  get_logger():trace(msg)
+  get_logger():info(msg)
 end
 
 return M

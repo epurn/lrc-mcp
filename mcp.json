@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "lrc-mcp": {
+      "command": ".venv/Scripts/python.exe",
+      "args": [
+        "\\-m",
+        "lrc_mcp.main"
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}
+

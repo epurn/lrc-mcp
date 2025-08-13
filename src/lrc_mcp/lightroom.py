@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import datetime as _dt
+import logging
 from typing import Any, Dict, List, Optional
 
 import mcp.types as mcp_types
 
 from lrc_mcp.adapters.lightroom import launch_lightroom
 from lrc_mcp.services.lrc_bridge import get_store
+
+logger = logging.getLogger(__name__)
 
 
 def get_launch_lightroom_tool() -> mcp_types.Tool:
@@ -61,11 +64,22 @@ def get_lightroom_version_tool() -> mcp_types.Tool:
 
 def handle_launch_lightroom_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
     """Handle the Lightroom launch tool call."""
-    explicit_path: Optional[str] = None
-    if arguments and isinstance(arguments.get("path"), str):
-        explicit_path = arguments.get("path")
-    result = launch_lightroom(explicit_path)
-    return {"launched": result.launched, "pid": result.pid, "path": result.path}
+    logger.info(f"handle_launch_lightroom_tool called with arguments: {arguments}")
+    try:
+        explicit_path: Optional[str] = None
+        if arguments and isinstance(arguments.get("path"), str):
+            explicit_path = arguments.get("path")
+            logger.info(f"Using explicit path: {explicit_path}")
+        
+        logger.info("Calling launch_lightroom...")
+        result = launch_lightroom(explicit_path)
+        logger.info(f"launch_lightroom returned: {result}")
+        response = {"launched": result.launched, "pid": result.pid, "path": result.path}
+        logger.info(f"Returning response: {response}")
+        return response
+    except Exception as e:
+        logger.error(f"Error in handle_launch_lightroom_tool: {e}", exc_info=True)
+        raise
 
 
 def handle_lightroom_version_tool() -> Dict[str, Any]:

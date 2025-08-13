@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 
-from lrc_mcp.models import (
+from lrc_mcp.schema.models import (
     HeartbeatPayload,
     EnqueuePayload,
     ClaimPayload,

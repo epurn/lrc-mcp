@@ -19,3 +19,4 @@ catalogs/
 plugin/**/CompiledLua/**
 plugin/**/.cache/**
 plugin/lrc-mcp.lrplugin/logs/**
+stories/
