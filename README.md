@@ -41,12 +41,14 @@ uvicorn lrc_mcp.http_server:app --host 127.0.0.1 --port 8765 --reload
 ```
 
 ### Tools
-- `lrc_mcp_health`: basic health check for the MCP server. Returns structured output: `{ status, serverTime, version }`.
-- `lrc_launch_lightroom`: launch Lightroom Classic (Windows). Optional `path` input; otherwise uses `LRCLASSIC_PATH` or default install path. Returns `{ launched, pid, path }`. On Windows, uses explorer.exe launch to ensure persistence beyond host job termination.
-- `lrc_lightroom_version`: returns `{ status: "ok"|"waiting", lr_version, last_seen }` based on plugin heartbeat. **Important:** Always wait for `status: "ok"` before using other Lightroom tools.
-- `lrc_add_collection`: create a new collection in Lightroom. **Requires Lightroom to be running.** Input: `{ name, parent_path, wait_timeout_sec }`. Returns `{ status, created, collection, command_id, error }`.
-- `lrc_remove_collection`: remove a collection from Lightroom. **Requires Lightroom to be running.** Input: `{ collection_path, wait_timeout_sec }`. Returns `{ status, removed, command_id, error }`.
-- `lrc_edit_collection`: edit (rename/move) a collection in Lightroom. **Requires Lightroom to be running.** Input: `{ collection_path, new_name, new_parent_path, wait_timeout_sec }`. Returns `{ status, updated, collection, command_id, error }`.
+- `lrc_mcp_health`: Does check the health status of the lrc-mcp server. Returns server status, current time, and version information. Use this to verify the server is running properly. Returns `{ status, serverTime, version }`.
+- `lrc_launch_lightroom`: Does launch Lightroom Classic on Windows. Detects and gracefully terminates existing instances before launching. Uses external launcher for job object isolation. Returns process information and launch status. Input: `{ path }`. Returns `{ launched, pid, path }`.
+- `lrc_kill_lightroom`: Does gracefully terminate any running Lightroom Classic process. Sends WM_CLOSE message to Lightroom windows, waits up to 15 seconds for graceful shutdown, then force terminates if needed. Returns termination status and process information. Returns `{ killed, previous_pid, duration_ms }`.
+- `lrc_lightroom_version`: Does return Lightroom Classic version and enhanced process status information. Checks both plugin heartbeat and actual process presence to determine Lightroom status. Essential for verifying Lightroom connectivity before using other tools. Returns `{ status: "ok"|"waiting"|"not_running", running, lr_version, last_seen }`. **Important:** Always wait for `status: "ok"` before using other Lightroom tools.
+- `lrc_add_collection`: Does create a new collection in Lightroom Classic. Requires Lightroom to be running with plugin connected. Parent collection sets must already exist. Returns collection information and creation status. Input: `{ name, parent_path, wait_timeout_sec }`. Returns `{ status, created, collection, command_id, error }`.
+- `lrc_add_collection_set`: Does create a new collection set in Lightroom Classic. Requires Lightroom to be running with plugin connected. Parent collection sets must already exist. Returns collection set information and creation status. Input: `{ name, parent_path, wait_timeout_sec }`. Returns `{ status, created, collection_set, command_id, error }`.
+- `lrc_remove_collection`: Does remove a collection from Lightroom Classic. Requires Lightroom to be running with plugin connected. Returns removal status and operation information. Input: `{ collection_path, wait_timeout_sec }`. Returns `{ status, removed, command_id, error }`.
+- `lrc_edit_collection`: Does edit (rename/move) a collection in Lightroom Classic. Requires Lightroom to be running with plugin connected. Can change collection name and/or move to different parent. Returns updated collection information and operation status. Input: `{ collection_path, new_name, new_parent_path, wait_timeout_sec }`. Returns `{ status, updated, collection, command_id, error }`.
 
 ### HTTP bridge (Step 4 foundation)
 Endpoints for the plugin:

@@ -8,9 +8,11 @@ from lrc_mcp.adapters.lightroom import (
     _query_tasklist_lightroom,
     _parse_first_pid_from_tasklist,
     _is_lightroom_running,
+    _kill_lightroom_gracefully,
     _launch_via_external_launcher,
     resolve_lightroom_path,
     launch_lightroom,
+    kill_lightroom,
     LaunchResult,
 )
 
@@ -179,23 +181,37 @@ class TestLightroomAdapter:
     @patch('lrc_mcp.adapters.lightroom.os.name', 'nt')
     @patch('lrc_mcp.adapters.lightroom.resolve_lightroom_path')
     @patch('lrc_mcp.adapters.lightroom._is_lightroom_running')
+    @patch('lrc_mcp.adapters.lightroom._kill_lightroom_gracefully')
     @patch('lrc_mcp.adapters.lightroom._launch_via_external_launcher')
     @patch('lrc_mcp.adapters.lightroom.time.sleep')
     @patch('lrc_mcp.adapters.lightroom.os.path.exists')
     @patch('lrc_mcp.adapters.lightroom.os.path.isfile')
-    def test_launch_lightroom_already_running(self, mock_isfile, mock_exists, mock_sleep, mock_launch, mock_is_running, mock_resolve):
+    def test_launch_lightroom_already_running(self, mock_isfile, mock_exists, mock_sleep, mock_launch, mock_kill, mock_is_running, mock_resolve):
         """Test launch_lightroom when Lightroom is already running."""
         mock_resolve.return_value = "/path/to/lightroom.exe"
         mock_exists.return_value = True  # Lightroom path exists
         mock_isfile.return_value = True  # Lightroom path is a file
-        mock_is_running.return_value = (True, 1234)
+        # Mock the sequence of calls to _is_lightroom_running:
+        # 1. Initial check: Lightroom is running (PID 1234)
+        # 2. Multiple calls during kill process: Lightroom is not running (to simulate successful kill)
+        # 3. After launch and sleep: Lightroom may or may not be detected as running
+        mock_is_running.side_effect = [(True, 1234)] + [(False, None)] * 50 + [(False, None)]
+        mock_kill.return_value = True  # Successfully killed
         
         result = launch_lightroom()
         assert isinstance(result, LaunchResult)
-        assert result.launched is False
-        assert result.pid == 1234
+        # With restart logic, it should launch a new instance
+        assert result.launched is True
         assert result.path == "/path/to/lightroom.exe"
-        mock_launch.assert_not_called()
+        mock_launch.assert_called_once()
+
+
+
+
+
+
+
+
 
     @patch('lrc_mcp.adapters.lightroom.os.name', 'nt')
     @patch('lrc_mcp.adapters.lightroom.resolve_lightroom_path')
@@ -235,3 +251,75 @@ class TestLightroomAdapter:
         assert result.launched is True
         assert result.pid == 1234
         assert result.path == "/path/to/lightroom.exe"
+
+    @patch('lrc_mcp.adapters.lightroom.os.name', 'posix')
+    def test_kill_lightroom_gracefully_non_windows(self):
+        """Test _kill_lightroom_gracefully on non-Windows."""
+        result = _kill_lightroom_gracefully(1234)
+        assert result is False
+
+    @patch('lrc_mcp.adapters.lightroom.os.name', 'nt')
+    @patch('lrc_mcp.adapters.lightroom._is_lightroom_running')
+    def test_kill_lightroom_gracefully_not_running(self, mock_is_running):
+        """Test _kill_lightroom_gracefully when Lightroom is not running."""
+        mock_is_running.return_value = (False, None)
+        result = _kill_lightroom_gracefully(1234)
+        assert result is True
+
+    @patch('lrc_mcp.adapters.lightroom.os.name', 'nt')
+    @patch('lrc_mcp.adapters.lightroom._is_lightroom_running')
+    @patch('lrc_mcp.adapters.lightroom.time.time')
+    @patch('lrc_mcp.adapters.lightroom.time.sleep')
+    def test_kill_lightroom_gracefully_timeout(self, mock_sleep, mock_time, mock_is_running):
+        """Test _kill_lightroom_gracefully timeout scenario."""
+        # Mock time to simulate timeout
+        mock_time.side_effect = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]  # 16 seconds > 15 timeout
+        mock_is_running.return_value = (True, 1234)  # Always report running
+        
+        result = _kill_lightroom_gracefully(1234, timeout=15)
+        assert result is False  # Should return False on timeout
+
+    @patch('lrc_mcp.adapters.lightroom.os.name', 'nt')
+    @patch('lrc_mcp.adapters.lightroom._is_lightroom_running')
+    @patch('lrc_mcp.adapters.lightroom.time.time')
+    @patch('lrc_mcp.adapters.lightroom.time.sleep')
+    def test_kill_lightroom_gracefully_success(self, mock_sleep, mock_time, mock_is_running):
+        """Test _kill_lightroom_gracefully success scenario."""
+        # Mock time and is_running to simulate successful kill
+        mock_time.side_effect = [0, 1, 2]  # Quick succession
+        mock_is_running.side_effect = [(True, 1234), (False, None)]  # Running then not running
+        
+        result = _kill_lightroom_gracefully(1234, timeout=15)
+        assert result is True  # Should return True on success
+
+    @patch('lrc_mcp.adapters.lightroom.os.name', 'nt')
+    @patch('lrc_mcp.adapters.lightroom._is_lightroom_running')
+    def test_kill_lightroom_not_running(self, mock_is_running):
+        """Test kill_lightroom when Lightroom is not running."""
+        mock_is_running.return_value = (False, None)
+        
+        result = kill_lightroom()
+        assert result["killed"] is False
+        assert result["previous_pid"] is None
+        assert result["duration_ms"] >= 0
+
+    @patch('lrc_mcp.adapters.lightroom.os.name', 'posix')
+    def test_kill_lightroom_non_windows(self):
+        """Test kill_lightroom on non-Windows."""
+        result = kill_lightroom()
+        assert result["killed"] is False
+        assert result["previous_pid"] is None
+        assert result["duration_ms"] == 0
+
+    @patch('lrc_mcp.adapters.lightroom.os.name', 'nt')
+    @patch('lrc_mcp.adapters.lightroom._is_lightroom_running')
+    @patch('lrc_mcp.adapters.lightroom._kill_lightroom_gracefully')
+    def test_kill_lightroom_success(self, mock_kill_gracefully, mock_is_running):
+        """Test kill_lightroom success scenario."""
+        mock_is_running.return_value = (True, 1234)
+        mock_kill_gracefully.return_value = True
+        
+        result = kill_lightroom()
+        assert result["killed"] is True
+        assert result["previous_pid"] == 1234
+        assert result["duration_ms"] >= 0

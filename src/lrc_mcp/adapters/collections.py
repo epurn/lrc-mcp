@@ -53,7 +53,7 @@ def get_add_collection_tool() -> mcp_types.Tool:
     """Get the add collection tool definition."""
     return mcp_types.Tool(
         name="lrc_add_collection",
-        description="Create a new collection in Lightroom Classic. Parent collection sets must already exist.",
+        description="Does create a new collection in Lightroom Classic. Requires Lightroom to be running with plugin connected. Parent collection sets must already exist. Returns collection information and creation status.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -74,20 +74,20 @@ def get_add_collection_tool() -> mcp_types.Tool:
         outputSchema={
             "type": "object",
             "properties": {
-                "status": {"type": "string", "enum": ["ok", "pending", "error"]},
-                "created": {"type": ["boolean", "null"]},
+                "status": {"type": "string", "enum": ["ok", "pending", "error"], "description": "Operation status: ok (completed), pending (in progress), error (failed)"},
+                "created": {"type": ["boolean", "null"], "description": "True if collection was created, False if not, null if pending"},
                 "collection": {
                     "type": ["object", "null"],
                     "properties": {
-                        "id": {"type": ["string", "null"]},
-                        "name": {"type": "string"},
-                        "path": {"type": "string"}
+                        "id": {"type": ["string", "null"], "description": "Collection identifier"},
+                        "name": {"type": "string", "description": "Collection name"},
+                        "path": {"type": "string", "description": "Full collection path"}
                     },
                     "required": ["id", "name", "path"],
                     "additionalProperties": False
                 },
-                "command_id": {"type": ["string", "null"]},
-                "error": {"type": ["string", "null"]}
+                "command_id": {"type": ["string", "null"], "description": "Command identifier for tracking asynchronous operations"},
+                "error": {"type": ["string", "null"], "description": "Error message if operation failed, null otherwise"}
             },
             "required": ["status", "created", "collection", "command_id", "error"],
             "additionalProperties": False,
@@ -99,7 +99,7 @@ def get_add_collection_set_tool() -> mcp_types.Tool:
     """Get the add collection set tool definition."""
     return mcp_types.Tool(
         name="lrc_add_collection_set",
-        description="Create a new collection set in Lightroom Classic. Parent collection sets must already exist.",
+        description="Does create a new collection set in Lightroom Classic. Requires Lightroom to be running with plugin connected. Parent collection sets must already exist. Returns collection set information and creation status.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -120,20 +120,20 @@ def get_add_collection_set_tool() -> mcp_types.Tool:
         outputSchema={
             "type": "object",
             "properties": {
-                "status": {"type": "string", "enum": ["ok", "pending", "error"]},
-                "created": {"type": ["boolean", "null"]},
+                "status": {"type": "string", "enum": ["ok", "pending", "error"], "description": "Operation status: ok (completed), pending (in progress), error (failed)"},
+                "created": {"type": ["boolean", "null"], "description": "True if collection set was created, False if not, null if pending"},
                 "collection_set": {
                     "type": ["object", "null"],
                     "properties": {
-                        "id": {"type": ["string", "null"]},
-                        "name": {"type": "string"},
-                        "path": {"type": "string"}
+                        "id": {"type": ["string", "null"], "description": "Collection set identifier"},
+                        "name": {"type": "string", "description": "Collection set name"},
+                        "path": {"type": "string", "description": "Full collection set path"}
                     },
                     "required": ["id", "name", "path"],
                     "additionalProperties": False
                 },
-                "command_id": {"type": ["string", "null"]},
-                "error": {"type": ["string", "null"]}
+                "command_id": {"type": ["string", "null"], "description": "Command identifier for tracking asynchronous operations"},
+                "error": {"type": ["string", "null"], "description": "Error message if operation failed, null otherwise"}
             },
             "required": ["status", "created", "collection_set", "command_id", "error"],
             "additionalProperties": False,
@@ -145,7 +145,7 @@ def get_remove_collection_tool() -> mcp_types.Tool:
     """Get the remove collection tool definition."""
     return mcp_types.Tool(
         name="lrc_remove_collection",
-        description="Remove a collection from Lightroom Classic.",
+        description="Does remove a collection from Lightroom Classic. Requires Lightroom to be running with plugin connected. Returns removal status and operation information.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -165,10 +165,10 @@ def get_remove_collection_tool() -> mcp_types.Tool:
         outputSchema={
             "type": "object",
             "properties": {
-                "status": {"type": "string", "enum": ["ok", "pending", "error"]},
-                "removed": {"type": ["boolean", "null"]},
-                "command_id": {"type": ["string", "null"]},
-                "error": {"type": ["string", "null"]}
+                "status": {"type": "string", "enum": ["ok", "pending", "error"], "description": "Operation status: ok (completed), pending (in progress), error (failed)"},
+                "removed": {"type": ["boolean", "null"], "description": "True if collection was removed, False if not, null if pending"},
+                "command_id": {"type": ["string", "null"], "description": "Command identifier for tracking asynchronous operations"},
+                "error": {"type": ["string", "null"], "description": "Error message if operation failed, null otherwise"}
             },
             "required": ["status", "removed", "command_id", "error"],
             "additionalProperties": False,
@@ -180,7 +180,7 @@ def get_edit_collection_tool() -> mcp_types.Tool:
     """Get the edit collection tool definition."""
     return mcp_types.Tool(
         name="lrc_edit_collection",
-        description="Edit (rename/move) a collection in Lightroom Classic.",
+        description="Does edit (rename/move) a collection in Lightroom Classic. Requires Lightroom to be running with plugin connected. Can change collection name and/or move to different parent. Returns updated collection information and operation status.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -208,20 +208,20 @@ def get_edit_collection_tool() -> mcp_types.Tool:
         outputSchema={
             "type": "object",
             "properties": {
-                "status": {"type": "string", "enum": ["ok", "pending", "error"]},
-                "updated": {"type": ["boolean", "null"]},
+                "status": {"type": "string", "enum": ["ok", "pending", "error"], "description": "Operation status: ok (completed), pending (in progress), error (failed)"},
+                "updated": {"type": ["boolean", "null"], "description": "True if collection was updated, False if not, null if pending"},
                 "collection": {
                     "type": ["object", "null"],
                     "properties": {
-                        "id": {"type": ["string", "null"]},
-                        "name": {"type": "string"},
-                        "path": {"type": "string"}
+                        "id": {"type": ["string", "null"], "description": "Collection identifier"},
+                        "name": {"type": "string", "description": "Collection name"},
+                        "path": {"type": "string", "description": "Full collection path"}
                     },
                     "required": ["id", "name", "path"],
                     "additionalProperties": False
                 },
-                "command_id": {"type": ["string", "null"]},
-                "error": {"type": ["string", "null"]}
+                "command_id": {"type": ["string", "null"], "description": "Command identifier for tracking asynchronous operations"},
+                "error": {"type": ["string", "null"], "description": "Error message if operation failed, null otherwise"}
             },
             "required": ["status", "updated", "collection", "command_id", "error"],
             "additionalProperties": False,

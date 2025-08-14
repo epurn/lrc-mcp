@@ -5,6 +5,7 @@
 .clinerules/
 .continue/*
 .venv/
+.pytest_cache/
 **/__pycache__/
 lrc_mcp/adapters/__pycache__/lightroom.cpython-313.pyc
 .resources/

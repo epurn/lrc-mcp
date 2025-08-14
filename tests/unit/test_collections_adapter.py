@@ -97,40 +97,44 @@ class TestCollectionsAdapter:
         tool = get_add_collection_tool()
         assert tool.name == "lrc_add_collection"
         assert tool.description is not None
-        assert "Create a new collection" in tool.description
+        assert "Does create a new collection" in tool.description
         assert tool.inputSchema is not None
         assert tool.outputSchema is not None
         assert "name" in tool.inputSchema["properties"]
         assert "parent_path" in tool.inputSchema["properties"]
+
 
     def test_get_add_collection_set_tool(self):
         """Test getting the add collection set tool definition."""
         tool = get_add_collection_set_tool()
         assert tool.name == "lrc_add_collection_set"
         assert tool.description is not None
-        assert "Create a new collection set" in tool.description
+        assert "Does create a new collection set" in tool.description
         assert tool.inputSchema is not None
         assert tool.outputSchema is not None
+
 
     def test_get_remove_collection_tool(self):
         """Test getting the remove collection tool definition."""
         tool = get_remove_collection_tool()
         assert tool.name == "lrc_remove_collection"
         assert tool.description is not None
-        assert "Remove a collection" in tool.description
+        assert "Does remove a collection" in tool.description
         assert tool.inputSchema is not None
         assert tool.outputSchema is not None
         assert "collection_path" in tool.inputSchema["properties"]
+
 
     def test_get_edit_collection_tool(self):
         """Test getting the edit collection tool definition."""
         tool = get_edit_collection_tool()
         assert tool.name == "lrc_edit_collection"
         assert tool.description is not None
-        assert "Edit (rename/move) a collection" in tool.description
+        assert "Does edit (rename/move) a collection" in tool.description
         assert tool.inputSchema is not None
         assert tool.outputSchema is not None
         assert "collection_path" in tool.inputSchema["properties"]
+
 
     @patch('lrc_mcp.adapters.collections._check_lightroom_dependency')
     def test_handle_add_collection_tool_dependency_error(self, mock_check):

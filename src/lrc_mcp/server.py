@@ -16,8 +16,10 @@ from lrc_mcp.health import get_health_tool, handle_health_tool
 from lrc_mcp.lightroom import (
     get_launch_lightroom_tool,
     get_lightroom_version_tool,
+    get_kill_lightroom_tool,
     handle_launch_lightroom_tool,
     handle_lightroom_version_tool,
+    handle_kill_lightroom_tool,
 )
 from lrc_mcp.adapters.collections import (
     get_add_collection_tool,
@@ -53,6 +55,7 @@ def create_server(version: str) -> Server:
             get_health_tool(),
             get_launch_lightroom_tool(),
             get_lightroom_version_tool(),
+            get_kill_lightroom_tool(),
             get_add_collection_tool(),
             get_add_collection_set_tool(),
             get_remove_collection_tool(),
@@ -70,6 +73,8 @@ def create_server(version: str) -> Server:
             return handle_launch_lightroom_tool(arguments)
         if name == "lrc_lightroom_version":
             return handle_lightroom_version_tool()
+        if name == "lrc_kill_lightroom":
+            return handle_kill_lightroom_tool(arguments)
         if name == "lrc_add_collection":
             return handle_add_collection_tool(arguments)
         if name == "lrc_add_collection_set":

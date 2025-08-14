@@ -10,10 +10,10 @@ class TestHealthTool:
     """Tests for health tool functions."""
 
     def test_get_health_tool(self):
-        """Test getting the health tool definition."""
+        """Test getting the health check tool definition."""
         tool = get_health_tool()
         assert tool.name == "lrc_mcp_health"
-        assert tool.description == "Check the health status of the MCP server."
+        assert tool.description == "Does check the health status of the lrc-mcp server. Returns server status, current time, and version information. Use this to verify the server is running properly."
         assert tool.inputSchema == {
             "type": "object",
             "properties": {},
@@ -24,6 +24,7 @@ class TestHealthTool:
         assert "status" in tool.outputSchema["properties"]
         assert "serverTime" in tool.outputSchema["properties"]
         assert "version" in tool.outputSchema["properties"]
+
 
     def test_handle_health_tool(self):
         """Test handling the health tool call."""
