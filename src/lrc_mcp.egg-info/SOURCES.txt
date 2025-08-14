@@ -16,6 +16,7 @@ lrc_mcp.egg-info/entry_points.txt
 lrc_mcp.egg-info/requires.txt
 lrc_mcp.egg-info/top_level.txt
 lrc_mcp/adapters/__init__.py
+lrc_mcp/adapters/collections.py
 lrc_mcp/adapters/lightroom.py
 lrc_mcp/api/__init__.py
 lrc_mcp/api/routes.py

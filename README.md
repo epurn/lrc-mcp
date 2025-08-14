@@ -73,19 +73,80 @@ After the plugin loads and the server is running, you should see periodic heartb
 
 ```bash
 # Test basic command queuing
-python tests/enqueue_echo.py "test message"
+python tests/functional/enqueue_echo.py "test message"
 
 # Run comprehensive command queue tests
-python tests/test_command_queue.py
+python tests/functional/test_command_queue.py
 
 # Test collection management commands
-python tests/test_collections.py
+python tests/functional/test_collections.py
 
 # Test Lightroom dependency checking
-python tests/test_lightroom_dependency.py
+python tests/functional/test_lightroom_dependency.py
 
 # Test Lightroom persistence beyond LLM timeouts (Windows)
-python tests/test_lightroom_persistence.py
+python tests/functional/test_lightroom_persistence.py
+```
+
+#### Unit Tests
+The project now includes comprehensive unit tests that can be run without external dependencies:
+
+#### Plugin Tests
+The Lightroom Classic plugin includes an in-situ test suite that can be run directly within Lightroom to validate plugin functionality:
+
+**Running Plugin Tests:**
+1. In Lightroom Classic, go to `File` → `Plug-in Extras`
+2. Select `MCP: Run Tests` from the menu
+3. Check the plugin logs for detailed results at `plugin/lrc-mcp.lrplugin/logs/lrc_mcp.log`
+
+**Test Coverage:**
+- Collection lifecycle operations (create, remove)
+- Collection set lifecycle operations (create, remove, nested collections)
+- Error path handling (invalid inputs, missing parents, non-existent items)
+- Automatic cleanup of test artifacts
+- Asynchronous execution with proper write access handling
+
+**Test Implementation:**
+- Tests run in `LrTasks.startAsyncTask` to avoid blocking the UI thread
+- Catalog mutations execute within `catalog:withWriteAccessDo` for safe write operations
+- All test results are logged using `logger.info` for evidence capture
+- Comprehensive cleanup ensures no test artifacts remain in your catalog
+
+For detailed documentation, see `plugin/lrc-mcp.lrplugin/TESTING.md`.
+
+```bash
+# Run unit tests only
+pytest tests/unit -v
+
+# Run integration tests
+pytest tests/integration -v
+
+# Run functional tests
+pytest tests/functional -v
+
+# Run all tests
+pytest tests -v
+
+# Run tests with coverage report
+pytest tests --cov=src/lrc_mcp --cov-report=html --cov-report=term
+```
+
+Or use the test runner script:
+```bash
+# Run unit tests
+python tests/run_tests.py unit
+
+# Run integration tests
+python tests/run_tests.py integration
+
+# Run functional tests
+python tests/run_tests.py functional
+
+# Run all tests
+python tests/run_tests.py all
+
+# Run with coverage
+python tests/run_tests.py coverage
 ```
 
 Check the plugin logs at `plugin/lrc-mcp.lrplugin/logs/lrc_mcp.log` to see commands being claimed and completed.
