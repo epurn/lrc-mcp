@@ -11,9 +11,12 @@ return {
   LrExportMenuItems = {
     {
       title = 'MCP: Loaded',
+      file = 'MenuLoaded.lua',
+    },
+    {
+      title = 'MCP: Run Tests',
       file = 'Menu.lua',
     },
   },
   VERSION = { major = 0, minor = 1, revision = 0 },
 }
-

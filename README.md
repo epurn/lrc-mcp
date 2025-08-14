@@ -91,6 +91,29 @@ python tests/functional/test_lightroom_persistence.py
 #### Unit Tests
 The project now includes comprehensive unit tests that can be run without external dependencies:
 
+#### Plugin Tests
+The Lightroom Classic plugin includes an in-situ test suite that can be run directly within Lightroom to validate plugin functionality:
+
+**Running Plugin Tests:**
+1. In Lightroom Classic, go to `File` → `Plug-in Extras`
+2. Select `MCP: Run Tests` from the menu
+3. Check the plugin logs for detailed results at `plugin/lrc-mcp.lrplugin/logs/lrc_mcp.log`
+
+**Test Coverage:**
+- Collection lifecycle operations (create, remove)
+- Collection set lifecycle operations (create, remove, nested collections)
+- Error path handling (invalid inputs, missing parents, non-existent items)
+- Automatic cleanup of test artifacts
+- Asynchronous execution with proper write access handling
+
+**Test Implementation:**
+- Tests run in `LrTasks.startAsyncTask` to avoid blocking the UI thread
+- Catalog mutations execute within `catalog:withWriteAccessDo` for safe write operations
+- All test results are logged using `logger.info` for evidence capture
+- Comprehensive cleanup ensures no test artifacts remain in your catalog
+
+For detailed documentation, see `plugin/lrc-mcp.lrplugin/TESTING.md`.
+
 ```bash
 # Run unit tests only
 pytest tests/unit -v
