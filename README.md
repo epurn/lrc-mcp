@@ -49,6 +49,7 @@ uvicorn lrc_mcp.http_server:app --host 127.0.0.1 --port 8765 --reload
 - `lrc_add_collection_set`: Does create a new collection set in Lightroom Classic. Requires Lightroom to be running with plugin connected. Parent collection sets must already exist. Returns collection set information and creation status. Input: `{ name, parent_path, wait_timeout_sec }`. Returns `{ status, created, collection_set, command_id, error }`.
 - `lrc_remove_collection`: Does remove a collection from Lightroom Classic. Requires Lightroom to be running with plugin connected. Returns removal status and operation information. Input: `{ collection_path, wait_timeout_sec }`. Returns `{ status, removed, command_id, error }`.
 - `lrc_edit_collection`: Does edit (rename/move) a collection in Lightroom Classic. Requires Lightroom to be running with plugin connected. Can change collection name and/or move to different parent. Returns updated collection information and operation status. Input: `{ collection_path, new_name, new_parent_path, wait_timeout_sec }`. Returns `{ status, updated, collection, command_id, error }`.
+- `check_command_status`: Does check the status of a previously submitted asynchronous command. Returns current status and result information. Input: `{ command_id }`. Returns `{ status: "pending"|"running"|"completed"|"failed", result, error, progress }`.
 
 ### HTTP bridge (Step 4 foundation)
 Endpoints for the plugin:

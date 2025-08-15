@@ -32,6 +32,11 @@ from lrc_mcp.adapters.collections import (
     handle_edit_collection_tool,
 )
 
+from lrc_mcp.adapters.lightroom import (
+    get_check_command_status_tool,
+    handle_check_command_status_tool,
+)
+
 from lrc_mcp.adapters.test import (
     get_run_tests_tool,
     handle_run_tests_tool,
@@ -65,6 +70,7 @@ def create_server(version: str) -> Server:
             get_add_collection_set_tool(),
             get_remove_collection_tool(),
             get_edit_collection_tool(),
+            get_check_command_status_tool(),
             get_run_tests_tool(),
         ]
 
@@ -89,6 +95,8 @@ def create_server(version: str) -> Server:
             return handle_remove_collection_tool(arguments)
         if name == "lrc_edit_collection":
             return handle_edit_collection_tool(arguments)
+        if name == "check_command_status":
+            return handle_check_command_status_tool(arguments)
         if name == "lrc_run_tests":
             return handle_run_tests_tool(arguments)
         raise ValueError(f"Unknown tool: {name}")
