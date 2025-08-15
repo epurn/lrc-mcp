@@ -25,10 +25,12 @@ from lrc_mcp.adapters.collections import (
     get_add_collection_tool,
     get_add_collection_set_tool,
     get_remove_collection_tool,
+    get_remove_collection_set_tool,
     get_edit_collection_tool,
     handle_add_collection_tool,
     handle_add_collection_set_tool,
     handle_remove_collection_tool,
+    handle_remove_collection_set_tool,
     handle_edit_collection_tool,
 )
 
@@ -69,6 +71,7 @@ def create_server(version: str) -> Server:
             get_add_collection_tool(),
             get_add_collection_set_tool(),
             get_remove_collection_tool(),
+            get_remove_collection_set_tool(),
             get_edit_collection_tool(),
             get_check_command_status_tool(),
             get_run_tests_tool(),
@@ -93,6 +96,8 @@ def create_server(version: str) -> Server:
             return handle_add_collection_set_tool(arguments)
         if name == "lrc_remove_collection":
             return handle_remove_collection_tool(arguments)
+        if name == "lrc_remove_collection_set":
+            return handle_remove_collection_set_tool(arguments)
         if name == "lrc_edit_collection":
             return handle_edit_collection_tool(arguments)
         if name == "check_command_status":

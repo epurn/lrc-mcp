@@ -25,6 +25,10 @@ function CommandHandlers.handle_remove_collection_command(payload_raw)
   return CollectionCommands.handle_remove_collection_command(payload_raw)
 end
 
+function CommandHandlers.handle_remove_collection_set_command(payload_raw)
+  return CollectionCommands.handle_remove_collection_set_command(payload_raw)
+end
+
 function CommandHandlers.handle_edit_collection_command(payload_raw)
   return CollectionCommands.handle_edit_collection_command(payload_raw)
 end

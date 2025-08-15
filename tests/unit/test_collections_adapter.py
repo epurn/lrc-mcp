@@ -10,10 +10,12 @@ from lrc_mcp.adapters.collections import (
     get_add_collection_tool,
     get_add_collection_set_tool,
     get_remove_collection_tool,
+    get_remove_collection_set_tool,
     get_edit_collection_tool,
     handle_add_collection_tool,
     handle_add_collection_set_tool,
     handle_remove_collection_tool,
+    handle_remove_collection_set_tool,
     handle_edit_collection_tool,
 )
 from lrc_mcp.services.lrc_bridge import Heartbeat
@@ -134,6 +136,17 @@ class TestCollectionsAdapter:
         assert tool.inputSchema is not None
         assert tool.outputSchema is not None
         assert "collection_path" in tool.inputSchema["properties"]
+
+
+    def test_get_remove_collection_set_tool(self):
+        """Test getting the remove collection set tool definition."""
+        tool = get_remove_collection_set_tool()
+        assert tool.name == "lrc_remove_collection_set"
+        assert tool.description is not None
+        assert "Does remove a collection set" in tool.description
+        assert tool.inputSchema is not None
+        assert tool.outputSchema is not None
+        assert "collection_set_path" in tool.inputSchema["properties"]
 
 
     @patch('lrc_mcp.adapters.collections._check_lightroom_dependency')
@@ -262,3 +275,24 @@ class TestCollectionsAdapter:
         assert result["status"] == "ok"
         assert result["command_id"] == "test-command-id"
         assert result["created"] is True
+
+    @patch('lrc_mcp.adapters.collections._check_lightroom_dependency')
+    @patch('lrc_mcp.adapters.collections.get_queue')
+    def test_handle_remove_collection_set_tool_success(self, mock_get_queue, mock_check):
+        """Test handle_remove_collection_set_tool success case."""
+        mock_check.return_value = None  # No dependency error
+        
+        mock_queue = MagicMock()
+        mock_queue.enqueue.return_value = "test-command-id"
+        mock_queue.wait_for_result.return_value = MagicMock(
+            ok=True,
+            result={"removed": True}
+        )
+        mock_get_queue.return_value = mock_queue
+        
+        arguments = {"collection_set_path": "Test Set"}
+        result = handle_remove_collection_set_tool(arguments)
+        
+        assert result["status"] == "ok"
+        assert result["command_id"] == "test-command-id"
+        assert result["removed"] is True
