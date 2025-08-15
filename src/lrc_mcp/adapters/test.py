@@ -50,7 +50,7 @@ def get_run_tests_tool() -> mcp_types.Tool:
     """Get the run tests tool definition."""
     return mcp_types.Tool(
         name="lrc_run_tests",
-        description="Does run the in-situ test suite for the lrc-mcp Lightroom plugin. Requires Lightroom to be running with plugin connected. Tests run asynchronously and results are logged to the plugin log file.",
+        description="Does run the in-suite test suite for the lrc-mcp Lightroom plugin. Requires Lightroom to be running with plugin connected. Tests run asynchronously and results are logged to the plugin log file.",
         inputSchema={
             "type": "object",
             "properties": {},
