@@ -15,6 +15,8 @@ if plugin_dir then
 end
 
 local Logger = require 'Logger'
+Logger.info('Init.lua: starting plugin initialization')
+
 local MCPBridge = require 'MCPBridge'
 local probe = Logger.test_write()
 Logger.info('lrc_mcp plugin initialized; plugin_write_ok=' .. tostring(probe and probe.plugin_write_ok))
@@ -24,4 +26,6 @@ LrFunctionContext.postAsyncTaskWithContext('MCP Background Loops', function(cont
   Logger.debug('Scheduling MCPBridge loops after init')
   MCPBridge.start()
 end)
+
+Logger.info('Init.lua: plugin initialization complete')
 return true

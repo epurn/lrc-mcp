@@ -32,6 +32,11 @@ from lrc_mcp.adapters.collections import (
     handle_edit_collection_tool,
 )
 
+from lrc_mcp.adapters.test import (
+    get_run_tests_tool,
+    handle_run_tests_tool,
+)
+
 SERVER_NAME = "lrc_mcp"
 logger = logging.getLogger(__name__)
 
@@ -60,6 +65,7 @@ def create_server(version: str) -> Server:
             get_add_collection_set_tool(),
             get_remove_collection_tool(),
             get_edit_collection_tool(),
+            get_run_tests_tool(),
         ]
 
     @server.call_tool()
@@ -83,6 +89,8 @@ def create_server(version: str) -> Server:
             return handle_remove_collection_tool(arguments)
         if name == "lrc_edit_collection":
             return handle_edit_collection_tool(arguments)
+        if name == "lrc_run_tests":
+            return handle_run_tests_tool(arguments)
         raise ValueError(f"Unknown tool: {name}")
 
     return server

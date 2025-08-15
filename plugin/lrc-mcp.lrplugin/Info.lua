@@ -17,6 +17,10 @@ return {
       title = 'MCP: Run Tests',
       file = 'Menu.lua',
     },
+    {
+      title = 'Simple Test',
+      file = 'SimpleTest.lua',
+    },
   },
   VERSION = { major = 0, minor = 1, revision = 0 },
 }
