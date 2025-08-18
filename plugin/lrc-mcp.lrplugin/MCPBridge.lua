@@ -62,10 +62,14 @@ function MCPBridge.start()
             cmdOk, resultTable, errMsg = CommandHandlers.handle_create_collection_command(cmd.payload_raw)
           elseif cmd.type == 'collection_set.create' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_create_collection_set_command(cmd.payload_raw)
+          elseif cmd.type == 'collection_set.list' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_list_collection_sets_command(cmd.payload_raw)
           elseif cmd.type == 'collection.remove' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_remove_collection_command(cmd.payload_raw)
           elseif cmd.type == 'collection.edit' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_edit_collection_command(cmd.payload_raw)
+          elseif cmd.type == 'collection_set.edit' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_edit_collection_set_command(cmd.payload_raw)
           elseif cmd.type == 'collection_set.remove' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_remove_collection_set_command(cmd.payload_raw)
           elseif cmd.type == 'run_tests' then
@@ -76,23 +80,7 @@ function MCPBridge.start()
           
           local resultJson = 'null'
           if cmdOk and resultTable then
-            local parts = {}
-            for k, v in pairs(resultTable) do
-              local val
-              if type(v) == 'string' then
-                val = Utils.json_string(v)
-              elseif type(v) == 'number' then
-                val = tostring(v)
-              elseif type(v) == 'boolean' then
-                val = v and 'true' or 'false'
-              elseif v == nil then
-                val = 'null'
-              else
-                val = Utils.json_string(tostring(v))
-              end
-              table.insert(parts, '"' .. tostring(k) .. '":' .. val)
-            end
-            resultJson = '{' .. table.concat(parts, ',') .. '}'
+            resultJson = Utils.json_encode(resultTable)
           end
           
           local payload = string.format('{"ok":%s,"result":%s,"error":%s}', cmdOk and 'true' or 'false', resultJson, errMsg and Utils.json_string(errMsg) or 'null')

@@ -107,4 +107,51 @@ function Utils.extract_json_value(json_str, key)
   return nil
 end
 
+-- Determine if a Lua table is an array (1..n contiguous integer keys)
+function Utils.is_array(tbl)
+  if type(tbl) ~= 'table' then return false end
+  local max_index = 0
+  local count = 0
+  for k, _ in pairs(tbl) do
+    if type(k) ~= 'number' then
+      return false
+    end
+    if k > max_index then max_index = k end
+    count = count + 1
+  end
+  return max_index == count
+end
+
+-- JSON encoder that supports nested tables (arrays/objects), numbers, booleans, strings, and nil
+function Utils.json_encode(value)
+  local t = type(value)
+  if t == 'nil' then
+    return 'null'
+  elseif t == 'boolean' then
+    return value and 'true' or 'false'
+  elseif t == 'number' then
+    return tostring(value)
+  elseif t == 'string' then
+    return Utils.json_string(value)
+  elseif t == 'table' then
+    if Utils.is_array(value) then
+      local parts = {}
+      for i = 1, #value do
+        table.insert(parts, Utils.json_encode(value[i]))
+      end
+      return '[' .. table.concat(parts, ',') .. ']'
+    else
+      local parts = {}
+      for k, v in pairs(value) do
+        local key = Utils.json_string(tostring(k))
+        table.insert(parts, key .. ':' .. Utils.json_encode(v))
+      end
+      return '{' .. table.concat(parts, ',') .. '}'
+    end
+  else
+    -- Fallback: stringify and quote
+    return Utils.json_string(tostring(value))
+  end
+end
+
 return Utils

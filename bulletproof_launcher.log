@@ -32,3 +32,20 @@
 2025-08-13 23:43:24,393 INFO ✅ Scheduled task launched successfully
 2025-08-13 23:43:27,497 INFO 🎉 SUCCESS: Scheduled Task launched Lightroom successfully!
 2025-08-13 23:43:27,497 INFO ✅ Bulletproof launch completed successfully
+2025-08-18 06:56:52,764 INFO Bulletproof launcher started with path: D:/Tools/Adobe/Adobe Lightroom Classic/Lightroom.exe
+2025-08-18 06:56:52,765 INFO Starting bulletproof launch for: D:/Tools/Adobe/Adobe Lightroom Classic/Lightroom.exe
+2025-08-18 06:56:52,765 INFO Process in job: True
+2025-08-18 06:56:52,765 INFO Job limit flags: 0x00003000
+2025-08-18 06:56:52,765 INFO Job restrictions: {'kill_on_close': True, 'breakaway_ok': False, 'silent_breakaway_ok': True}
+2025-08-18 06:56:52,765 WARNING ⚠️ Detected KILL_ON_JOB_CLOSE - using only strongest isolation methods
+2025-08-18 06:56:52,766 INFO Trying method: Scheduled Task
+2025-08-18 06:56:52,766 INFO Attempting scheduled task launch...
+2025-08-18 06:56:52,766 INFO Creating task: schtasks /create /tn LightroomLauncher_5d41ea31 /tr "D:/Tools/Adobe/Adobe Lightroom Classic/Lightroom.exe" /sc once /st 00:01 /f
+2025-08-18 06:56:52,827 INFO Task creation result: 0
+2025-08-18 06:56:52,827 INFO Task creation output: SUCCESS: The scheduled task "LightroomLauncher_5d41ea31" has successfully been created.
+
+2025-08-18 06:56:52,827 INFO Running task: schtasks /run /tn LightroomLauncher_5d41ea31
+2025-08-18 06:56:52,854 INFO Task run result: 0
+2025-08-18 06:56:52,854 INFO ✅ Scheduled task launched successfully
+2025-08-18 06:56:55,989 INFO 🎉 SUCCESS: Scheduled Task launched Lightroom successfully!
+2025-08-18 06:56:55,989 INFO ✅ Bulletproof launch completed successfully

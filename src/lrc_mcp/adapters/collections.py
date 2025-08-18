@@ -624,3 +624,187 @@ def handle_remove_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[
             "command_id": command_id,
             "error": None
         }
+
+
+# -------------------------------
+# Unified Collection Set Tool API
+# -------------------------------
+
+def get_collection_set_tool() -> mcp_types.Tool:
+    """Get the unified collection set tool definition.
+
+    Provides a single entry point for listing, creating, editing, and deleting collection sets.
+    """
+    return mcp_types.Tool(
+        name="lrc_collection_set",
+        description="Does execute collection set actions in Lightroom Classic via a unified dispatcher. Requires Lightroom to be running with plugin connected. Static functions: list, create, edit, delete.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "function": {
+                    "type": "string",
+                    "enum": ["list", "create", "edit", "delete"],
+                    "description": "Collection set action to perform"
+                },
+                "args": {
+                    "type": "object",
+                    "description": "Arguments for the selected function",
+                    "additionalProperties": True
+                },
+                "wait_timeout_sec": {
+                    "type": ["number", "null"],
+                    "minimum": 0,
+                    "default": 5,
+                    "description": "Wait for plugin result; 0 to return immediately"
+                }
+            },
+            "required": ["function"],
+            "additionalProperties": False
+        },
+        outputSchema={
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["ok", "pending", "error"],
+                    "description": "Operation status"
+                },
+                "result": {
+                    "type": ["object", "null"],
+                    "description": "Function-specific result payload. list: { collection_sets: [...] }. create: { created, collection_set }. edit: { updated, collection_set }. delete: { removed }."
+                },
+                "command_id": {
+                    "type": ["string", "null"],
+                    "description": "Command identifier for async tracking"
+                },
+                "error": {
+                    "type": ["string", "null"],
+                    "description": "Error message if any"
+                }
+            },
+            "required": ["status", "result", "command_id", "error"],
+            "additionalProperties": False
+        }
+    )
+
+
+def handle_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
+    """Handle the unified collection set tool call.
+
+    Supports function=list|create|edit|delete with corresponding args.
+    """
+    dependency_error = _check_lightroom_dependency()
+    if dependency_error:
+        # Normalize to this tool's output schema
+        return {
+            "status": "error",
+            "result": None,
+            "command_id": None,
+            "error": dependency_error.get("error") if isinstance(dependency_error, dict) else "Lightroom dependency check failed"
+        }
+
+    if not arguments or not isinstance(arguments, dict):
+        return {"status": "error", "result": None, "command_id": None, "error": "No arguments provided"}
+
+    func = arguments.get("function")
+    if func not in {"list", "create", "edit", "delete"}:
+        return {"status": "error", "result": None, "command_id": None, "error": "Invalid function. Expected one of: list, create, edit, delete"}
+
+    args = arguments.get("args") or {}
+    if not isinstance(args, dict):
+        return {"status": "error", "result": None, "command_id": None, "error": "args must be an object"}
+
+    wait_timeout_sec = arguments.get("wait_timeout_sec")
+    if wait_timeout_sec is not None:
+        if not isinstance(wait_timeout_sec, (int, float)) or wait_timeout_sec < 0:
+            wait_timeout_sec = 5
+    else:
+        wait_timeout_sec = 5
+
+    queue = get_queue()
+
+    if func == "list":
+        parent_path = args.get("parent_path")
+        if parent_path is not None and not isinstance(parent_path, str):
+            parent_path = None
+
+        # Optional recursive flag: default to True to include all nested sets
+        include_nested = args.get("include_nested")
+        if include_nested is None:
+            include_nested = True
+        elif not isinstance(include_nested, bool):
+            include_nested = True
+
+        command_id = queue.enqueue(
+            type="collection_set.list",
+            payload={"parent_path": parent_path, "include_nested": include_nested},
+        )
+        if wait_timeout_sec > 0:
+            result = queue.wait_for_result(command_id, wait_timeout_sec)
+            if result is None:
+                return {"status": "pending", "result": None, "command_id": command_id, "error": None}
+            if result.ok and result.result is not None:
+                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None}
+            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error"}
+        return {"status": "pending", "result": None, "command_id": command_id, "error": None}
+
+    if func == "create":
+        name = args.get("name")
+        if not name or not isinstance(name, str):
+            return {"status": "error", "result": None, "command_id": None, "error": "name is required for create"}
+        parent_path = args.get("parent_path")
+        if parent_path is not None and not isinstance(parent_path, str):
+            parent_path = None
+        command_id = queue.enqueue(type="collection_set.create", payload={"name": name, "parent_path": parent_path})
+        if wait_timeout_sec > 0:
+            result = queue.wait_for_result(command_id, wait_timeout_sec)
+            if result is None:
+                return {"status": "pending", "result": None, "command_id": command_id, "error": None}
+            if result.ok and result.result is not None:
+                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None}
+            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error"}
+        return {"status": "pending", "result": None, "command_id": command_id, "error": None}
+
+    if func == "edit":
+        collection_set_path = args.get("collection_set_path")
+        if not collection_set_path or not isinstance(collection_set_path, str):
+            return {"status": "error", "result": None, "command_id": None, "error": "collection_set_path is required for edit"}
+        new_name = args.get("new_name")
+        if new_name is not None and not isinstance(new_name, str):
+            new_name = None
+        new_parent_path = args.get("new_parent_path")
+        if new_parent_path is not None and not isinstance(new_parent_path, str):
+            new_parent_path = None
+        command_id = queue.enqueue(
+            type="collection_set.edit",
+            payload={
+                "collection_set_path": collection_set_path,
+                "new_name": new_name,
+                "new_parent_path": new_parent_path,
+            },
+        )
+        if wait_timeout_sec > 0:
+            result = queue.wait_for_result(command_id, wait_timeout_sec)
+            if result is None:
+                return {"status": "pending", "result": None, "command_id": command_id, "error": None}
+            if result.ok and result.result is not None:
+                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None}
+            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error"}
+        return {"status": "pending", "result": None, "command_id": command_id, "error": None}
+
+    if func == "delete":
+        collection_set_path = args.get("collection_set_path")
+        if not collection_set_path or not isinstance(collection_set_path, str):
+            return {"status": "error", "result": None, "command_id": None, "error": "collection_set_path is required for delete"}
+        command_id = queue.enqueue(type="collection_set.remove", payload={"collection_set_path": collection_set_path})
+        if wait_timeout_sec > 0:
+            result = queue.wait_for_result(command_id, wait_timeout_sec)
+            if result is None:
+                return {"status": "pending", "result": None, "command_id": command_id, "error": None}
+            if result.ok and result.result is not None:
+                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None}
+            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error"}
+        return {"status": "pending", "result": None, "command_id": command_id, "error": None}
+
+    # Should not reach here
+    return {"status": "error", "result": None, "command_id": None, "error": "Unhandled function"}

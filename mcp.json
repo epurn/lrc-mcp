@@ -1,15 +1,16 @@
 {
   "mcpServers": {
     "lrc-mcp": {
-      "command": ".venv/Scripts/python.exe",
+      "command": "D:/Development/lrc-mcp/.venv/Scripts/python.exe",
       "args": [
         "\\-m",
         "lrc_mcp.main"
       ],
       "env": {
-        "PYTHONUNBUFFERED": "1"
+        "LRC_MCP_HTTP_PORT": "8765",
+        "LRCLASSIC_PATH": "D:/Tools/Adobe/Adobe Lightroom Classic/Lightroom.exe"
       }
-    }
   }
+}
 }
 

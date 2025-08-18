@@ -626,6 +626,7 @@ function CollectionCommands.handle_edit_collection_command(payload_raw)
   
   if not task_completed then
     Logger.error('Collection edit timed out after ' .. timeout .. ' seconds')
+    WriteLock.release_write_lock('Edit Collection') -- Ensure lock is released on timeout
     return false, nil, 'Collection edit timed out after ' .. timeout .. ' seconds'
   end
   
@@ -734,6 +735,265 @@ function CollectionCommands.handle_remove_collection_set_command(payload_raw)
   else
     Logger.error('Failed to remove collection set: ' .. tostring(error_msg))
     return false, nil, error_msg or 'Failed to remove collection set'
+  end
+end
+
+-- List collection sets under an optional parent path
+function CollectionCommands.handle_list_collection_sets_command(payload_raw)
+  local parent_path = nil
+  Logger.info('handle_list_collection_sets_command called with payload_raw: ' .. tostring(payload_raw))
+
+  if payload_raw and type(payload_raw) == 'string' then
+    parent_path = Utils.extract_json_value(payload_raw, "parent_path")
+  end
+
+  -- Optional recursive listing flag
+  local include_nested = false
+  if payload_raw and type(payload_raw) == 'string' then
+    local nested_val = Utils.extract_json_value(payload_raw, "include_nested")
+    if type(nested_val) == 'boolean' then
+      include_nested = nested_val
+    end
+  end
+
+  local LrApplication = import 'LrApplication'
+  local LrTasks = import 'LrTasks'
+
+  local result = nil
+  local error_msg = nil
+  local task_completed = false
+  local task_success = false
+
+  LrTasks.startAsyncTask(function()
+    Logger.debug('Starting collection set listing - parent_path: ' .. tostring(parent_path))
+    local catalog = LrApplication.activeCatalog()
+    if not catalog then
+      Logger.error('No active catalog found')
+      error_msg = 'No active catalog found'
+      task_success = false
+      task_completed = true
+      return
+    end
+
+    local parent = catalog
+    if parent_path and parent_path ~= '' then
+      Logger.info('Finding parent collection set for listing: ' .. tostring(parent_path))
+      parent = CollectionUtils.find_collection_set(catalog, parent_path)
+      if not parent then
+        Logger.error('Failed to find parent collection set: ' .. tostring(parent_path))
+        error_msg = 'Failed to find parent collection set: ' .. tostring(parent_path)
+        task_success = false
+        task_completed = true
+        return
+      end
+    end
+
+    local function collect_sets(node, acc)
+      local child_sets = node:getChildCollectionSets()
+      if child_sets then
+        for _, coll_set in ipairs(child_sets) do
+          local full_path = CollectionUtils.get_collection_path(catalog, coll_set)
+          table.insert(acc, {
+            id = coll_set.localIdentifier,
+            name = coll_set:getName(),
+            path = full_path
+          })
+          if include_nested then
+            collect_sets(coll_set, acc)
+          end
+        end
+      end
+    end
+
+    local sets = {}
+    collect_sets(parent, sets)
+
+    result = { collection_sets = sets }
+    task_success = true
+    task_completed = true
+  end, 'List Collection Sets Task')
+
+  local timeout = 10
+  local elapsed = 0
+  while not task_completed and elapsed < timeout do
+    LrTasks.sleep(0.1)
+    elapsed = elapsed + 0.1
+  end
+
+  if not task_completed then
+    Logger.error('Collection set listing timed out after ' .. timeout .. ' seconds')
+    return false, nil, 'Collection set listing timed out after ' .. timeout .. ' seconds'
+  end
+
+  if task_success and result then
+    Logger.debug('Collection set listing successful: ' .. tostring(result))
+    return true, result, nil
+  else
+    Logger.error('Failed to list collection sets: ' .. tostring(error_msg))
+    return false, nil, error_msg or 'Failed to list collection sets'
+  end
+end
+
+-- Edit (rename/move) a collection set
+function CollectionCommands.handle_edit_collection_set_command(payload_raw)
+  local collection_set_path, new_name, new_parent_path = nil, nil, nil
+  Logger.info('handle_edit_collection_set_command called with payload_raw: ' .. tostring(payload_raw))
+
+  if payload_raw and type(payload_raw) == 'string' then
+    collection_set_path = Utils.extract_json_value(payload_raw, "collection_set_path")
+    new_name = Utils.extract_json_value(payload_raw, "new_name")
+    new_parent_path = Utils.extract_json_value(payload_raw, "new_parent_path")
+  end
+
+  if not collection_set_path or collection_set_path == '' then
+    return false, nil, 'Collection set path is required. Received path: ' .. tostring(collection_set_path)
+  end
+
+  local LrApplication = import 'LrApplication'
+  local LrTasks = import 'LrTasks'
+
+  local result = nil
+  local error_msg = nil
+  local task_completed = false
+  local task_success = false
+
+  LrTasks.startAsyncTask(function()
+    if not WriteLock.acquire_write_lock('Edit Collection Set') then
+      Logger.error('Failed to acquire write lock for collection set edit')
+      error_msg = 'Failed to acquire write lock for collection set edit'
+      task_success = false
+      task_completed = true
+      return
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    if not catalog then
+      Logger.error('No active catalog found')
+      error_msg = 'No active catalog found'
+      task_success = false
+      task_completed = true
+      WriteLock.release_write_lock('Edit Collection Set')
+      return
+    end
+
+    local updated = false
+    local target_name = nil
+    local moved_parent_path = nil
+    if new_parent_path ~= nil then
+      moved_parent_path = new_parent_path
+    end
+
+    local status, err = catalog:withWriteAccessDo('Edit Collection Set', function(context)
+      local target_set = CollectionUtils.find_collection_set(catalog, collection_set_path)
+      if not target_set then
+        Logger.debug('Collection set not found for editing: ' .. tostring(collection_set_path))
+        result = { updated = false, collection_set = nil }
+        task_success = true
+        task_completed = true
+        return
+      end
+
+      target_name = target_set:getName()
+
+      if new_name and new_name ~= '' and new_name ~= target_name then
+        target_set:setName(new_name)
+        target_name = new_name
+        updated = true
+        Logger.debug('Collection set renamed to: ' .. tostring(new_name))
+      end
+
+      if moved_parent_path ~= nil then
+        local new_parent = nil
+        if moved_parent_path == '' or moved_parent_path == nil then
+          new_parent = catalog
+        else
+          new_parent = CollectionUtils.find_collection_set(catalog, moved_parent_path)
+        end
+        if not new_parent then
+          Logger.error('Failed to find new parent collection set: ' .. tostring(moved_parent_path))
+          error('Failed to find new parent collection set: ' .. tostring(moved_parent_path))
+        end
+        if new_parent ~= target_set:getParent() then
+          target_set:setParent(new_parent)
+          updated = true
+          Logger.debug('Collection set moved to new parent: ' .. tostring(moved_parent_path))
+        end
+      end
+    end, { timeout = 10 })
+
+    if status ~= "executed" then
+      Logger.error('Error in collection set edit: ' .. tostring(err))
+      error_msg = 'Failed to edit collection set: ' .. tostring(err)
+      task_success = false
+      task_completed = true
+      WriteLock.release_write_lock('Edit Collection Set')
+      return
+    end
+
+    local search_path = collection_set_path
+    if updated then
+      if moved_parent_path ~= nil then
+        if moved_parent_path == '' or moved_parent_path == nil then
+          search_path = target_name
+        else
+          search_path = moved_parent_path .. "/" .. target_name
+        end
+      else
+        -- Only renamed, not moved: rebuild path using original parent path + new name
+        local parent_path_only = nil
+        local idx = string.find(collection_set_path, "/[^/]*$")
+        if idx then
+          parent_path_only = string.sub(collection_set_path, 1, idx - 1)
+        else
+          parent_path_only = ''
+        end
+        if parent_path_only == '' then
+          search_path = target_name
+        else
+          search_path = parent_path_only .. "/" .. target_name
+        end
+      end
+    end
+
+    local re_fetched = CollectionUtils.find_collection_set(catalog, search_path)
+    local info = nil
+    if re_fetched then
+      local full_path = CollectionUtils.get_collection_path(catalog, re_fetched)
+      info = {
+        id = re_fetched.localIdentifier,
+        name = re_fetched:getName(),
+        path = full_path
+      }
+    end
+
+    result = {
+      updated = updated,
+      collection_set = info
+    }
+    task_success = true
+    task_completed = true
+    WriteLock.release_write_lock('Edit Collection Set')
+  end, 'Edit Collection Set Task')
+
+  local timeout = 10
+  local elapsed = 0
+  while not task_completed and elapsed < timeout do
+    LrTasks.sleep(0.1)
+    elapsed = elapsed + 0.1
+  end
+
+  if not task_completed then
+    Logger.error('Collection set edit timed out after ' .. timeout .. ' seconds')
+    WriteLock.release_write_lock('Edit Collection Set') -- Ensure lock is released on timeout
+    return false, nil, 'Collection set edit timed out after ' .. timeout .. ' seconds'
+  end
+
+  if task_success and result then
+    Logger.debug('Collection set edit successful: ' .. tostring(result))
+    return true, result, nil
+  else
+    Logger.error('Failed to edit collection set: ' .. tostring(error_msg))
+    return false, nil, error_msg or 'Failed to edit collection set'
   end
 end
 
