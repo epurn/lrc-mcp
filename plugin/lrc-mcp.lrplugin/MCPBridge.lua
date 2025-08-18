@@ -66,6 +66,8 @@ function MCPBridge.start()
             cmdOk, resultTable, errMsg = CommandHandlers.handle_remove_collection_command(cmd.payload_raw)
           elseif cmd.type == 'collection.edit' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_edit_collection_command(cmd.payload_raw)
+          elseif cmd.type == 'collection_set.remove' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_remove_collection_set_command(cmd.payload_raw)
           elseif cmd.type == 'run_tests' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_run_tests_command()
           else

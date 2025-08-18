@@ -3,8 +3,8 @@
 Test script for collection management commands.
 
 This script demonstrates how to:
-1. Create collections
-2. Remove collections
+1. Create collections and collection sets
+2. Remove collections and collection sets
 3. Edit collections (rename/move)
 
 Environment:
@@ -95,13 +95,54 @@ def test_create_collection() -> bool:
     return True
 
 
+def test_create_collection_set() -> bool:
+    """Test creating a collection set.
+    
+    Returns:
+        True if test passes, False otherwise
+    """
+    print("\n2. Testing create collection set...")
+    
+    # Test creating a collection set in root
+    payload = {
+        "type": "collection_set.create",
+        "payload": {
+            "name": "Test Sets",
+            "parent_path": None
+        }
+    }
+    result = post("/plugin/commands/enqueue", payload)
+    print(f"   Create root collection set result: {json.dumps(result, indent=2)}")
+    
+    if "command_id" not in result:
+        print("   ✗ Failed to create collection set")
+        return False
+    
+    # Test creating a nested collection set
+    payload2 = {
+        "type": "collection_set.create",
+        "payload": {
+            "name": "Nature",
+            "parent_path": "Test Sets"
+        }
+    }
+    result2 = post("/plugin/commands/enqueue", payload2)
+    print(f"   Create nested collection set result: {json.dumps(result2, indent=2)}")
+    
+    if "command_id" not in result2:
+        print("   ⚠ Warning: Failed to create nested collection set")
+    
+    print("   ✓ Collection set creation commands queued")
+    return True
+
+
 def test_remove_collection() -> bool:
     """Test removing a collection.
     
     Returns:
         True if test passes, False otherwise
     """
-    print("\n2. Testing remove collection...")
+    print("\n3. Testing remove collection...")
     
     payload = {
         "type": "collection.remove",
@@ -120,13 +161,38 @@ def test_remove_collection() -> bool:
         return False
 
 
+def test_remove_collection_set() -> bool:
+    """Test removing a collection set.
+    
+    Returns:
+        True if test passes, False otherwise
+    """
+    print("\n4. Testing remove collection set...")
+    
+    payload = {
+        "type": "collection_set.remove",
+        "payload": {
+            "collection_set_path": "Test Sets"
+        }
+    }
+    result = post("/plugin/commands/enqueue", payload)
+    print(f"   Remove collection set result: {json.dumps(result, indent=2)}")
+    
+    if "command_id" in result:
+        print("   ✓ Collection set removal command queued")
+        return True
+    else:
+        print("   ✗ Failed to queue collection set removal command")
+        return False
+
+
 def test_edit_collection() -> bool:
     """Test editing a collection.
     
     Returns:
         True if test passes, False otherwise
     """
-    print("\n3. Testing edit collection...")
+    print("\n5. Testing edit collection...")
     
     # First create a collection to edit
     create_payload = {
@@ -173,15 +239,17 @@ def test_collection_commands() -> bool:
     
     # Run all tests
     tests = [
+        test_create_collection_set(),
         test_create_collection(),
         test_edit_collection(),
-        test_remove_collection()
+        test_remove_collection(),
+        test_remove_collection_set()
     ]
     
     success = all(tests)
     
     if success:
-        print("\n4. Collection commands are now queued and will be processed by the Lightroom plugin.")
+        print("\n6. Collection commands are now queued and will be processed by the Lightroom plugin.")
         print("   Check the plugin logs at plugin/lrc-mcp.lrplugin/logs/lrc_mcp.log")
         print("   to see the commands being claimed and completed.")
     

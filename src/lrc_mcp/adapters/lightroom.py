@@ -14,6 +14,10 @@ import time
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+import mcp.types as mcp_types
+
+from lrc_mcp.services.lrc_bridge import get_queue, CommandResult
+
 
 DEFAULT_WINDOWS_PATH = r"C:\Program Files\Adobe\Adobe Lightroom Classic\Lightroom.exe"
 logger = logging.getLogger(__name__)
@@ -330,3 +334,83 @@ def launch_lightroom(explicit_path: Optional[str] = None) -> LaunchResult:
     except Exception as e:
         logger.error(f"Failed to launch Lightroom: {e}", exc_info=True)
         raise
+
+
+def get_check_command_status_tool() -> mcp_types.Tool:
+    """Get the check command status tool definition."""
+    return mcp_types.Tool(
+        name="check_command_status",
+        description="Does check the status of a previously submitted asynchronous command. Returns current status and result information. Input: { command_id }. Returns { status: pending|running|completed|failed, result, error, progress }.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "command_id": {"type": "string", "description": "The ID of the command to check"}
+            },
+            "required": ["command_id"],
+            "additionalProperties": False,
+        },
+        outputSchema={
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["pending", "running", "completed", "failed"], "description": "Current status of the command"},
+                "result": {"type": ["object", "null"], "description": "Command result data if completed successfully"},
+                "error": {"type": ["string", "null"], "description": "Error message if command failed"},
+                "progress": {"type": ["integer", "null"], "minimum": 0, "maximum": 100, "description": "Progress percentage (0-100) if available"}
+            },
+            "required": ["status"],
+            "additionalProperties": False,
+        },
+    )
+
+
+def handle_check_command_status_tool(arguments: dict | None) -> dict:
+    """Handle the check command status tool call."""
+    if not arguments:
+        return {
+            "status": "failed",
+            "error": "No arguments provided",
+            "result": None,
+            "progress": None
+        }
+    
+    command_id = arguments.get("command_id")
+    if not command_id or not isinstance(command_id, str):
+        return {
+            "status": "failed",
+            "error": "command_id is required and must be a string",
+            "result": None,
+            "progress": None
+        }
+    
+    # Get the command queue
+    queue = get_queue()
+    
+    # Check if command exists and get its result
+    result: Optional[CommandResult] = queue.get_result(command_id)
+    
+    # If result exists, the command has completed
+    if result is not None:
+        if result.ok:
+            return {
+                "status": "completed",
+                "result": result.result,
+                "error": None,
+                "progress": None
+            }
+        else:
+            return {
+                "status": "failed",
+                "result": None,
+                "error": result.error or "Unknown error",
+                "progress": None
+            }
+    
+    # If no result exists, check if command is still in the queue (pending/running)
+    # For now, we'll assume it's pending since we don't have visibility into running state
+    # In a more sophisticated implementation, we might track claimed commands separately
+    return {
+        "status": "pending",
+        "result": None,
+        "error": None,
+        "progress": None
+    }

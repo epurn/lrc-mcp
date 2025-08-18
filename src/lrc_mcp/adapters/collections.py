@@ -229,6 +229,41 @@ def get_edit_collection_tool() -> mcp_types.Tool:
     )
 
 
+def get_remove_collection_set_tool() -> mcp_types.Tool:
+    """Get the remove collection set tool definition."""
+    return mcp_types.Tool(
+        name="lrc_remove_collection_set",
+        description="Does remove a collection set from Lightroom Classic. Requires Lightroom to be running with plugin connected. Returns removal status and operation information.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "collection_set_path": {
+                    "type": "string",
+                    "description": "Collection set path (e.g., 'Sets/Nature' or just 'Nature' at root)"
+                },
+                "wait_timeout_sec": {
+                    "type": ["number", "null"],
+                    "minimum": 0,
+                    "description": "Wait timeout in seconds (default 5; 0 to return immediately)"
+                }
+            },
+            "required": ["collection_set_path"],
+            "additionalProperties": False,
+        },
+        outputSchema={
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["ok", "pending", "error"], "description": "Operation status: ok (completed), pending (in progress), error (failed)"},
+                "removed": {"type": ["boolean", "null"], "description": "True if collection set was removed, False if not, null if pending"},
+                "command_id": {"type": ["string", "null"], "description": "Command identifier for tracking asynchronous operations"},
+                "error": {"type": ["string", "null"], "description": "Error message if operation failed, null otherwise"}
+            },
+            "required": ["status", "removed", "command_id", "error"],
+            "additionalProperties": False,
+        },
+    )
+
+
 def handle_add_collection_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
     """Handle the add collection tool call."""
     # Check if Lightroom is running first
@@ -520,6 +555,72 @@ def handle_add_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str
             "status": "pending",
             "created": None,
             "collection_set": None,
+            "command_id": command_id,
+            "error": None
+        }
+
+
+def handle_remove_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
+    """Handle the remove collection set tool call."""
+    # Check if Lightroom is running first
+    dependency_error = _check_lightroom_dependency()
+    if dependency_error:
+        return dependency_error
+    
+    if not arguments:
+        return {"status": "error", "removed": None, "command_id": None, "error": "No arguments provided"}
+    
+    collection_set_path = arguments.get("collection_set_path")
+    if not collection_set_path or not isinstance(collection_set_path, str):
+        return {"status": "error", "removed": None, "command_id": None, "error": "Collection set path is required"}
+    
+    wait_timeout_sec = arguments.get("wait_timeout_sec")
+    if wait_timeout_sec is not None:
+        if not isinstance(wait_timeout_sec, (int, float)) or wait_timeout_sec < 0:
+            wait_timeout_sec = 5  # reduced default timeout
+    else:
+        wait_timeout_sec = 5  # reduced default timeout
+    
+    # Enqueue the command
+    queue = get_queue()
+    payload = {
+        "collection_set_path": collection_set_path
+    }
+    command_id = queue.enqueue(
+        type="collection_set.remove",
+        payload=payload
+    )
+    
+    # Wait for result if timeout > 0
+    if wait_timeout_sec > 0:
+        result = queue.wait_for_result(command_id, wait_timeout_sec)
+        if result is None:
+            # Timeout - return pending
+            return {
+                "status": "pending",
+                "removed": None,
+                "command_id": command_id,
+                "error": None
+            }
+        elif result.ok and result.result:
+            return {
+                "status": "ok",
+                "removed": result.result.get("removed"),
+                "command_id": command_id,
+                "error": None
+            }
+        else:
+            return {
+                "status": "error",
+                "removed": None,
+                "command_id": command_id,
+                "error": result.error or "Unknown error"
+            }
+    else:
+        # Return immediately
+        return {
+            "status": "pending",
+            "removed": None,
             "command_id": command_id,
             "error": None
         }

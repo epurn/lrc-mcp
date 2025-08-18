@@ -10,6 +10,7 @@
 lrc_mcp/adapters/__pycache__/lightroom.cpython-313.pyc
 .resources/
 instructions.md
+implementation_plan.md
 
 # Lightroom dev artifacts
 resources/

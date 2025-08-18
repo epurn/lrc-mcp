@@ -638,4 +638,103 @@ function CollectionCommands.handle_edit_collection_command(payload_raw)
   end
 end
 
+function CollectionCommands.handle_remove_collection_set_command(payload_raw)
+  local collection_set_path = nil
+  
+  Logger.info('handle_remove_collection_set_command called with payload_raw: ' .. tostring(payload_raw))
+  
+  if payload_raw and type(payload_raw) == 'string' then
+    collection_set_path = Utils.extract_json_value(payload_raw, "collection_set_path")
+  end
+  
+  Logger.info('Parsed collection_set_path: ' .. tostring(collection_set_path))
+  
+  if not collection_set_path or collection_set_path == '' then
+    return false, nil, 'Collection set path is required. Received path: ' .. tostring(collection_set_path)
+  end
+  
+  local LrFunctionContext = import 'LrFunctionContext'
+  local LrApplication = import 'LrApplication'
+  local LrTasks = import 'LrTasks'
+  
+  -- Use LrTasks.startAsyncTask to ensure we're in the correct context
+  local result = nil
+  local error_msg = nil
+  
+  local task_completed = false
+  local task_success = false
+  
+  LrTasks.startAsyncTask(function()
+    -- Acquire write lock to prevent concurrent write operations
+    if not WriteLock.acquire_write_lock('Remove Collection Set') then
+      Logger.error('Failed to acquire write lock for collection set removal')
+      error_msg = 'Failed to acquire write lock for collection set removal'
+      task_success = false
+      task_completed = true
+      return
+    end
+    
+    Logger.debug('Starting collection set removal - path: ' .. tostring(collection_set_path))
+    local catalog = LrApplication.activeCatalog()
+    if not catalog then
+      Logger.error('No active catalog found')
+      error_msg = 'No active catalog found'
+      task_success = false
+      task_completed = true
+      WriteLock.release_write_lock('Remove Collection Set')
+      return
+    end
+    local removed = false
+    
+    -- Perform the entire operation within the write access context to avoid timing issues
+    local status, err = catalog:withWriteAccessDo('Remove Collection Set', function(context)
+      -- Find the collection set within the write access context to ensure proper handling
+      local target_collection_set = CollectionUtils.find_collection_set(catalog, collection_set_path)
+      if target_collection_set and target_collection_set ~= catalog then
+        target_collection_set:delete()
+        removed = true
+        Logger.debug('Collection set removed successfully: ' .. tostring(collection_set_path))
+      else
+        Logger.debug('Collection set not found for removal: ' .. tostring(collection_set_path))
+      end
+    end, { timeout = 10 }) -- Reduced timeout to 10 seconds
+    
+    if status ~= "executed" then
+      Logger.error('Error in collection set removal: ' .. tostring(err))
+      error_msg = 'Failed to remove collection set: ' .. tostring(err)
+      task_success = false
+      task_completed = true
+      WriteLock.release_write_lock('Remove Collection Set')
+      return
+    end
+    
+    result = { removed = removed }
+    task_success = true
+    task_completed = true
+    WriteLock.release_write_lock('Remove Collection Set')
+  end, 'Remove Collection Set Task')
+  
+  -- Wait for task to complete (with timeout)
+  local timeout = 10 -- Reduced timeout
+  local elapsed = 0
+  while not task_completed and elapsed < timeout do
+    LrTasks.sleep(0.1)
+    elapsed = elapsed + 0.1
+  end
+  
+  if not task_completed then
+    Logger.error('Collection set removal timed out after ' .. timeout .. ' seconds')
+    WriteLock.release_write_lock('Remove Collection Set') -- Ensure lock is released on timeout
+    return false, nil, 'Collection set removal timed out after ' .. timeout .. ' seconds'
+  end
+  
+  if task_success and result then
+    Logger.debug('Collection set removal successful: ' .. tostring(result))
+    return true, result, nil
+  else
+    Logger.error('Failed to remove collection set: ' .. tostring(error_msg))
+    return false, nil, error_msg or 'Failed to remove collection set'
+  end
+end
+
 return CollectionCommands

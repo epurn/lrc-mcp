@@ -29,7 +29,8 @@ def test_tool_descriptions():
     # properly initialize the server and call list_tools())
     from lrc_mcp.health import get_health_tool
     from lrc_mcp.lightroom import get_launch_lightroom_tool, get_lightroom_version_tool, get_kill_lightroom_tool
-    from lrc_mcp.adapters.collections import get_add_collection_tool, get_add_collection_set_tool, get_remove_collection_tool, get_edit_collection_tool
+    from lrc_mcp.adapters.collections import get_add_collection_tool, get_add_collection_set_tool, get_remove_collection_tool, get_remove_collection_set_tool, get_edit_collection_tool
+    from lrc_mcp.adapters.lightroom import get_check_command_status_tool
     
     tools = [
         get_health_tool(),
@@ -39,7 +40,9 @@ def test_tool_descriptions():
         get_add_collection_tool(),
         get_add_collection_set_tool(),
         get_remove_collection_tool(),
+        get_remove_collection_set_tool(),
         get_edit_collection_tool(),
+        get_check_command_status_tool(),
     ]
     
     print("Testing tool descriptions for LLM discoverability...")
