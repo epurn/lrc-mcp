@@ -5,9 +5,12 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 from datetime import datetime, timedelta, timezone
 
+import logging
 import mcp.types as mcp_types
 
 from lrc_mcp.services.lrc_bridge import get_queue, get_store
+
+logger = logging.getLogger(__name__)
 
 
 def _is_lightroom_running() -> bool:
@@ -808,3 +811,232 @@ def handle_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str, An
 
     # Should not reach here
     return {"status": "error", "result": None, "command_id": None, "error": "Unhandled function"}
+
+
+# ---------------------------
+# Unified Collection Tool API
+# ---------------------------
+
+def get_collection_tool() -> mcp_types.Tool:
+    """Get the unified collection tool definition.
+
+    Provides a single entry point for listing, creating, editing, and deleting collections.
+    Also supports 'remove' as a backward-compatible alias for 'delete' (deprecated).
+    """
+    return mcp_types.Tool(
+        name="lrc_collection",
+        description=(
+            "Does execute collection actions in Lightroom Classic via a unified dispatcher. "
+            "Requires Lightroom to be running with plugin connected. Functions: list, create, edit, delete. "
+            "Accepts 'remove' as a deprecated alias for 'delete'."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "function": {
+                    "type": "string",
+                    "enum": ["list", "create", "edit", "delete"],  # 'remove' accepted at runtime as alias
+                    "description": "Collection action to perform"
+                },
+                "args": {
+                    "type": "object",
+                    "description": "Arguments for the selected function",
+                    "additionalProperties": True
+                },
+                "wait_timeout_sec": {
+                    "type": ["number", "null"],
+                    "minimum": 0,
+                    "default": 5,
+                    "description": "Wait for plugin result; 0 to return immediately"
+                }
+            },
+            "required": ["function"],
+            "additionalProperties": False
+        },
+        outputSchema={
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["ok", "pending", "error"],
+                    "description": "Operation status"
+                },
+                "result": {
+                    "type": ["object", "null"],
+                    "description": (
+                        "Function-specific result payload. "
+                        "list: { collections: [{ id, name, set_id, smart, photo_count, path }] }. "
+                        "create: { created, collection }. "
+                        "edit: { updated, collection }. "
+                        "delete: { removed }."
+                    ),
+                    "additionalProperties": True
+                },
+                "command_id": {
+                    "type": ["string", "null"],
+                    "description": "Command identifier for async tracking"
+                },
+                "error": {
+                    "type": ["string", "null"],
+                    "description": "Error message if any"
+                },
+                "deprecation": {
+                    "type": ["string", "null"],
+                    "description": "Deprecation note when using deprecated alias (e.g., 'remove' -> 'delete')"
+                }
+            },
+            "required": ["status", "result", "command_id", "error"],
+            "additionalProperties": False
+        }
+    )
+
+
+def handle_collection_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
+    """Handle the unified collection tool call.
+
+    Supports function=list|create|edit|delete with corresponding args.
+    Back-compat alias: function='remove' is treated as 'delete' with a deprecation note.
+    """
+    # Dependency check is deferred until after argument validation to surface schema errors first.
+
+    if not arguments or not isinstance(arguments, dict):
+        return {"status": "error", "result": None, "command_id": None, "error": "No arguments provided", "deprecation": None}
+
+    func = arguments.get("function")
+    deprecation: Optional[str] = None
+    if func == "remove":
+        # Backward compatibility: map remove -> delete
+        logger.warning("lrc_collection: 'remove' is deprecated; use 'delete' instead.")
+        func = "delete"
+        deprecation = "Function 'remove' is deprecated; use 'delete' instead."
+    if func not in {"list", "create", "edit", "delete"}:
+        return {"status": "error", "result": None, "command_id": None, "error": "Invalid function. Expected one of: list, create, edit, delete", "deprecation": None}
+
+    args = arguments.get("args") or {}
+    if not isinstance(args, dict):
+        return {"status": "error", "result": None, "command_id": None, "error": "args must be an object", "deprecation": None}
+
+    # Early validation for required parameters to surface schema errors before dependency checks
+    if func == "delete":
+        coll_id = args.get("id")
+        if not coll_id or not isinstance(coll_id, (str, int)):
+            return {"status": "error", "result": None, "command_id": None, "error": "id is required for delete", "deprecation": deprecation}
+
+    wait_timeout_sec = arguments.get("wait_timeout_sec")
+    if wait_timeout_sec is not None:
+        if not isinstance(wait_timeout_sec, (int, float)) or wait_timeout_sec < 0:
+            wait_timeout_sec = 5
+    else:
+        wait_timeout_sec = 5
+
+    # Perform dependency check after basic validation
+    dependency_error = _check_lightroom_dependency()
+    if dependency_error:
+        return {
+            "status": "error",
+            "result": None,
+            "command_id": None,
+            "error": dependency_error.get("error") if isinstance(dependency_error, dict) else "Lightroom dependency check failed",
+            "deprecation": deprecation
+        }
+
+    queue = get_queue()
+
+    # list
+    if func == "list":
+        # Optional filters
+        set_id = args.get("set_id")
+        if set_id is not None and not isinstance(set_id, str):
+            set_id = None
+        name_contains = args.get("name_contains")
+        if name_contains is not None and not isinstance(name_contains, str):
+            name_contains = None
+
+        command_id = queue.enqueue(
+            type="collection.list",
+            payload={"set_id": set_id, "name_contains": name_contains},
+        )
+        if wait_timeout_sec > 0:
+            result = queue.wait_for_result(command_id, wait_timeout_sec)
+            if result is None:
+                return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
+            if result.ok and result.result is not None:
+                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None, "deprecation": deprecation}
+            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error", "deprecation": deprecation}
+        return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
+
+    # create
+    if func == "create":
+        name = args.get("name")
+        if not name or not isinstance(name, str):
+            return {"status": "error", "result": None, "command_id": None, "error": "name is required for create", "deprecation": deprecation}
+        parent_path = args.get("parent_path")
+        if parent_path is not None and not isinstance(parent_path, str):
+            parent_path = None
+        smart = args.get("smart")
+        if smart is not None and not isinstance(smart, bool):
+            smart = None
+
+        command_id = queue.enqueue(
+            type="collection.create",
+            payload={"name": name, "parent_path": parent_path, "smart": smart},
+        )
+        if wait_timeout_sec > 0:
+            result = queue.wait_for_result(command_id, wait_timeout_sec)
+            if result is None:
+                return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
+            if result.ok and result.result is not None:
+                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None, "deprecation": deprecation}
+            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error", "deprecation": deprecation}
+        return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
+
+    # edit
+    if func == "edit":
+        collection_path = args.get("collection_path")
+        if not collection_path or not isinstance(collection_path, str):
+            return {"status": "error", "result": None, "command_id": None, "error": "collection_path is required for edit", "deprecation": deprecation}
+        new_name = args.get("new_name")
+        if new_name is not None and not isinstance(new_name, str):
+            new_name = None
+        new_parent_path = args.get("new_parent_path")
+        if new_parent_path is not None and not isinstance(new_parent_path, str):
+            new_parent_path = None
+
+        command_id = queue.enqueue(
+            type="collection.edit",
+            payload={
+                "collection_path": collection_path,
+                "new_name": new_name,
+                "new_parent_path": new_parent_path,
+            },
+        )
+        if wait_timeout_sec > 0:
+            result = queue.wait_for_result(command_id, wait_timeout_sec)
+            if result is None:
+                return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
+            if result.ok and result.result is not None:
+                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None, "deprecation": deprecation}
+            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error", "deprecation": deprecation}
+        return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
+
+    # delete (by id)
+    if func == "delete":
+        coll_id = args.get("id")
+        if not coll_id or not isinstance(coll_id, (str, int)):
+            return {"status": "error", "result": None, "command_id": None, "error": "id is required for delete", "deprecation": deprecation}
+
+        command_id = queue.enqueue(
+            type="collection.remove",
+            payload={"id": str(coll_id)},
+        )
+        if wait_timeout_sec > 0:
+            result = queue.wait_for_result(command_id, wait_timeout_sec)
+            if result is None:
+                return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
+            if result.ok and result.result is not None:
+                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None, "deprecation": deprecation}
+            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error", "deprecation": deprecation}
+        return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
+
+    # Should not reach here
+    return {"status": "error", "result": None, "command_id": None, "error": "Unhandled function", "deprecation": deprecation}

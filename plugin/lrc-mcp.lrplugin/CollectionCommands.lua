@@ -348,18 +348,19 @@ function CollectionCommands.handle_create_collection_command(payload_raw)
 end
 
 function CollectionCommands.handle_remove_collection_command(payload_raw)
-  local collection_path = nil
+  local collection_path, id = nil, nil
   
   Logger.info('handle_remove_collection_command called with payload_raw: ' .. tostring(payload_raw))
   
   if payload_raw and type(payload_raw) == 'string' then
     collection_path = Utils.extract_json_value(payload_raw, "collection_path")
+    id = Utils.extract_json_value(payload_raw, "id")
   end
   
   Logger.info('Parsed collection_path: ' .. tostring(collection_path))
   
-  if not collection_path or collection_path == '' then
-    return false, nil, 'Collection path is required. Received path: ' .. tostring(collection_path)
+  if (not id or id == '') and (not collection_path or collection_path == '') then
+    return false, nil, 'Collection id or path is required. Received id: ' .. tostring(id) .. ', path: ' .. tostring(collection_path)
   end
   
   local LrFunctionContext = import 'LrFunctionContext'
@@ -398,7 +399,12 @@ function CollectionCommands.handle_remove_collection_command(payload_raw)
     -- Perform the entire operation within the write access context to avoid timing issues
     local status, err = catalog:withWriteAccessDo('Remove Collection', function(context)
       -- Find the collection within the write access context to ensure proper handling
-      local target_collection = CollectionUtils.find_collection_by_path(catalog, collection_path)
+      local target_collection = nil
+      if id and id ~= '' then
+        target_collection = CollectionUtils.find_collection_by_id(catalog, id)
+      else
+        target_collection = CollectionUtils.find_collection_by_path(catalog, collection_path)
+      end
       if target_collection then
         target_collection:delete()
         removed = true
@@ -994,6 +1000,136 @@ function CollectionCommands.handle_edit_collection_set_command(payload_raw)
   else
     Logger.error('Failed to edit collection set: ' .. tostring(error_msg))
     return false, nil, error_msg or 'Failed to edit collection set'
+  end
+end
+
+-- List collections with optional filters (set_id, name_contains)
+function CollectionCommands.handle_list_collections_command(payload_raw)
+  local set_id = nil
+  local name_contains = nil
+  Logger.info('handle_list_collections_command called with payload_raw: ' .. tostring(payload_raw))
+
+  if payload_raw and type(payload_raw) == 'string' then
+    set_id = Utils.extract_json_value(payload_raw, "set_id")
+    name_contains = Utils.extract_json_value(payload_raw, "name_contains")
+  end
+
+  local LrApplication = import 'LrApplication'
+  local LrTasks = import 'LrTasks'
+
+  local result = nil
+  local error_msg = nil
+  local task_completed = false
+  local task_success = false
+
+  LrTasks.startAsyncTask(function()
+    Logger.debug('Starting collection listing - set_id: ' .. tostring(set_id) .. ', name_contains: ' .. tostring(name_contains))
+    local catalog = LrApplication.activeCatalog()
+    if not catalog then
+      Logger.error('No active catalog found')
+      error_msg = 'No active catalog found'
+      task_success = false
+      task_completed = true
+      return
+    end
+
+    local root = catalog
+    if set_id and set_id ~= '' then
+      local parent_set = CollectionUtils.find_collection_set_by_id(catalog, set_id)
+      if not parent_set then
+        Logger.error('Failed to find parent collection set by id: ' .. tostring(set_id))
+        error_msg = 'Failed to find parent collection set by id: ' .. tostring(set_id)
+        task_success = false
+        task_completed = true
+        return
+      end
+      root = parent_set
+    end
+
+    local lc_name_contains = nil
+    if name_contains and type(name_contains) == 'string' then
+      lc_name_contains = string.lower(name_contains)
+    end
+
+    local function matches_filters(coll)
+      if lc_name_contains then
+        local nm = string.lower(coll:getName() or '')
+        if not string.find(nm, lc_name_contains, 1, true) then
+          return false
+        end
+      end
+      return true
+    end
+
+    local function collect_from_node(node, acc)
+      local cols = node:getChildCollections()
+      if cols then
+        for _, coll in ipairs(cols) do
+          if matches_filters(coll) then
+            local parent = coll:getParent()
+            local full_path = CollectionUtils.get_collection_path(catalog, coll)
+
+            -- Detect smart collection (best-effort)
+            local is_smart = false
+            local ok_has, _ = pcall(function() return coll.getSearchDescription ~= nil end)
+            if ok_has and coll.getSearchDescription then
+              local ok_desc, desc = pcall(function() return coll:getSearchDescription() end)
+              if ok_desc and desc ~= nil then
+                is_smart = true
+              end
+            end
+
+            -- Photo count (best-effort)
+            local photo_count = 0
+            local ok_photos, photos = pcall(function() return coll:getPhotos() end)
+            if ok_photos and type(photos) == 'table' then
+              photo_count = #photos
+            end
+
+            table.insert(acc, {
+              id = coll.localIdentifier,
+              name = coll:getName(),
+              set_id = (parent and parent ~= catalog) and tostring(parent.localIdentifier) or nil,
+              smart = is_smart,
+              photo_count = photo_count,
+              path = full_path
+            })
+          end
+        end
+      end
+      local child_sets = node:getChildCollectionSets()
+      if child_sets then
+        for _, child in ipairs(child_sets) do
+          collect_from_node(child, acc)
+        end
+      end
+    end
+
+    local list = {}
+    collect_from_node(root, list)
+    result = { collections = list }
+    task_success = true
+    task_completed = true
+  end, 'List Collections Task')
+
+  local timeout = 10
+  local elapsed = 0
+  while not task_completed and elapsed < timeout do
+    LrTasks.sleep(0.1)
+    elapsed = elapsed + 0.1
+  end
+
+  if not task_completed then
+    Logger.error('Collection listing timed out after ' .. timeout .. ' seconds')
+    return false, nil, 'Collection listing timed out after ' .. timeout .. ' seconds'
+  end
+
+  if task_success and result then
+    Logger.debug('Collection listing successful: ' .. tostring(result))
+    return true, result, nil
+  else
+    Logger.error('Failed to list collections: ' .. tostring(error_msg))
+    return false, nil, error_msg or 'Failed to list collections'
   end
 end
 

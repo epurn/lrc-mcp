@@ -37,6 +37,10 @@ function CommandHandlers.handle_run_tests_command()
   return TestCommands.handle_run_tests_command()
 end
 
+function CommandHandlers.handle_list_collections_command(payload_raw)
+  return CollectionCommands.handle_list_collections_command(payload_raw)
+end
+
 function CommandHandlers.handle_list_collection_sets_command(payload_raw)
   return CollectionCommands.handle_list_collection_sets_command(payload_raw)
 end

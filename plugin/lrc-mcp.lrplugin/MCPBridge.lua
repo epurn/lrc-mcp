@@ -62,6 +62,8 @@ function MCPBridge.start()
             cmdOk, resultTable, errMsg = CommandHandlers.handle_create_collection_command(cmd.payload_raw)
           elseif cmd.type == 'collection_set.create' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_create_collection_set_command(cmd.payload_raw)
+          elseif cmd.type == 'collection.list' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_list_collections_command(cmd.payload_raw)
           elseif cmd.type == 'collection_set.list' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_list_collection_sets_command(cmd.payload_raw)
           elseif cmd.type == 'collection.remove' then

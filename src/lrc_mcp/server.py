@@ -28,12 +28,14 @@ from lrc_mcp.adapters.collections import (
     get_remove_collection_set_tool,
     get_edit_collection_tool,
     get_collection_set_tool,
+    get_collection_tool,
     handle_add_collection_tool,
     handle_add_collection_set_tool,
     handle_remove_collection_tool,
     handle_remove_collection_set_tool,
     handle_edit_collection_tool,
     handle_collection_set_tool,
+    handle_collection_tool,
 )
 
 from lrc_mcp.adapters.lightroom import (
@@ -76,6 +78,7 @@ def create_server(version: str) -> Server:
             get_remove_collection_set_tool(),
             get_edit_collection_tool(),
             get_collection_set_tool(),
+            get_collection_tool(),
             get_check_command_status_tool(),
             get_run_tests_tool(),
         ]
@@ -105,6 +108,8 @@ def create_server(version: str) -> Server:
             return handle_edit_collection_tool(arguments)
         if name == "lrc_collection_set":
             return handle_collection_set_tool(arguments)
+        if name == "lrc_collection":
+            return handle_collection_tool(arguments)
         if name == "check_command_status":
             return handle_check_command_status_tool(arguments)
         if name == "lrc_run_tests":

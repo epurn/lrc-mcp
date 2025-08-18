@@ -146,4 +146,49 @@ function CollectionUtils.get_collection_path(catalog, collection)
   return table.concat(path_parts, "/")
 end
 
+-- Find a collection set by its localIdentifier (string)
+function CollectionUtils.find_collection_set_by_id(catalog, target_id)
+  if not target_id or target_id == '' then return nil end
+  -- Depth-first search of collection sets
+  local function dfs_set(node)
+    local child_sets = node:getChildCollectionSets()
+    if child_sets then
+      for _, coll_set in ipairs(child_sets) do
+        if tostring(coll_set.localIdentifier) == tostring(target_id) then
+          return coll_set
+        end
+        local found = dfs_set(coll_set)
+        if found then return found end
+      end
+    end
+    return nil
+  end
+  return dfs_set(catalog)
+end
+
+-- Find a collection by its localIdentifier (string) by scanning all sets
+function CollectionUtils.find_collection_by_id(catalog, target_id)
+  if not target_id or target_id == '' then return nil end
+  -- Search collections under the catalog and all nested sets
+  local function scan_collections(node)
+    local cols = node:getChildCollections()
+    if cols then
+      for _, coll in ipairs(cols) do
+        if tostring(coll.localIdentifier) == tostring(target_id) then
+          return coll
+        end
+      end
+    end
+    local child_sets = node:getChildCollectionSets()
+    if child_sets then
+      for _, coll_set in ipairs(child_sets) do
+        local found = scan_collections(coll_set)
+        if found then return found end
+      end
+    end
+    return nil
+  end
+  return scan_collections(catalog)
+end
+
 return CollectionUtils

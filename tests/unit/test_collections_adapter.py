@@ -12,11 +12,13 @@ from lrc_mcp.adapters.collections import (
     get_remove_collection_tool,
     get_remove_collection_set_tool,
     get_edit_collection_tool,
+    get_collection_tool,
     handle_add_collection_tool,
     handle_add_collection_set_tool,
     handle_remove_collection_tool,
     handle_remove_collection_set_tool,
     handle_edit_collection_tool,
+    handle_collection_tool,
 )
 from lrc_mcp.services.lrc_bridge import Heartbeat
 
@@ -229,6 +231,120 @@ class TestCollectionsAdapter:
         assert result["status"] == "ok"
         assert result["command_id"] == "test-command-id"
         assert result["removed"] is True
+
+    def test_get_collection_tool(self):
+        """Test getting the unified collection tool definition."""
+        tool = get_collection_tool()
+        assert tool.name == "lrc_collection"
+        assert tool.description is not None
+        assert tool.description.strip().startswith("Does ")
+        assert tool.inputSchema is not None
+        assert tool.outputSchema is not None
+        assert "function" in tool.inputSchema["properties"]
+        assert "args" in tool.inputSchema["properties"]
+        assert "status" in tool.outputSchema["properties"]
+        assert "result" in tool.outputSchema["properties"]
+
+    @patch('lrc_mcp.adapters.collections._check_lightroom_dependency')
+    @patch('lrc_mcp.adapters.collections.get_queue')
+    def test_handle_collection_tool_alias_remove(self, mock_get_queue, mock_check):
+        """Test handle_collection_tool with deprecated 'remove' alias mapping to delete by id."""
+        mock_check.return_value = None  # No dependency error
+
+        mock_queue = MagicMock()
+        mock_queue.enqueue.return_value = "cmd-1"
+        mock_queue.wait_for_result.return_value = MagicMock(ok=True, result={"removed": True})
+        mock_get_queue.return_value = mock_queue
+
+        args = {"function": "remove", "args": {"id": "123"}}
+        result = handle_collection_tool(args)
+
+        assert result["status"] == "ok"
+        assert result["command_id"] == "cmd-1"
+        assert "deprecation" in result and result["deprecation"] is not None
+        mock_queue.enqueue.assert_called_once()
+        enq_kwargs = mock_queue.enqueue.call_args.kwargs
+        assert enq_kwargs["type"] == "collection.remove"
+        assert enq_kwargs["payload"]["id"] == "123"
+
+    @patch('lrc_mcp.adapters.collections._check_lightroom_dependency')
+    @patch('lrc_mcp.adapters.collections.get_queue')
+    def test_handle_collection_tool_list_success(self, mock_get_queue, mock_check):
+        """Test handle_collection_tool list function with filters."""
+        mock_check.return_value = None
+
+        mock_queue = MagicMock()
+        mock_queue.enqueue.return_value = "cmd-2"
+        mock_queue.wait_for_result.return_value = MagicMock(
+            ok=True,
+            result={"collections": [{"id": "1", "name": "Foo", "set_id": None, "smart": False, "photo_count": 0, "path": "Foo"}]}
+        )
+        mock_get_queue.return_value = mock_queue
+
+        args = {"function": "list", "args": {"set_id": "abc", "name_contains": "Foo"}}
+        result = handle_collection_tool(args)
+
+        assert result["status"] == "ok"
+        assert result["result"] is not None
+        assert "collections" in result["result"]
+        mock_queue.enqueue.assert_called_once()
+        enq_kwargs = mock_queue.enqueue.call_args.kwargs
+        assert enq_kwargs["type"] == "collection.list"
+        assert enq_kwargs["payload"]["set_id"] == "abc"
+        assert enq_kwargs["payload"]["name_contains"] == "Foo"
+
+    @patch('lrc_mcp.adapters.collections._check_lightroom_dependency')
+    @patch('lrc_mcp.adapters.collections.get_queue')
+    def test_handle_collection_tool_create_success(self, mock_get_queue, mock_check):
+        """Test handle_collection_tool create function."""
+        mock_check.return_value = None
+
+        mock_queue = MagicMock()
+        mock_queue.enqueue.return_value = "cmd-3"
+        mock_queue.wait_for_result.return_value = MagicMock(
+            ok=True,
+            result={"created": True, "collection": {"id": "9", "name": "New", "path": "New"}}
+        )
+        mock_get_queue.return_value = mock_queue
+
+        args = {"function": "create", "args": {"name": "New", "parent_path": "Sets/A"}}
+        result = handle_collection_tool(args)
+
+        assert result["status"] == "ok"
+        assert result["result"]["created"] is True
+        mock_queue.enqueue.assert_called_once()
+        enq_kwargs = mock_queue.enqueue.call_args.kwargs
+        assert enq_kwargs["type"] == "collection.create"
+
+    @patch('lrc_mcp.adapters.collections._check_lightroom_dependency')
+    @patch('lrc_mcp.adapters.collections.get_queue')
+    def test_handle_collection_tool_edit_success(self, mock_get_queue, mock_check):
+        """Test handle_collection_tool edit function."""
+        mock_check.return_value = None
+
+        mock_queue = MagicMock()
+        mock_queue.enqueue.return_value = "cmd-4"
+        mock_queue.wait_for_result.return_value = MagicMock(
+            ok=True,
+            result={"updated": True, "collection": {"id": "9", "name": "Renamed", "path": "Renamed"}}
+        )
+        mock_get_queue.return_value = mock_queue
+
+        args = {"function": "edit", "args": {"collection_path": "Old", "new_name": "Renamed"}}
+        result = handle_collection_tool(args)
+
+        assert result["status"] == "ok"
+        assert result["result"]["updated"] is True
+        mock_queue.enqueue.assert_called_once()
+        enq_kwargs = mock_queue.enqueue.call_args.kwargs
+        assert enq_kwargs["type"] == "collection.edit"
+
+    def test_handle_collection_tool_delete_requires_id(self):
+        """Test handle_collection_tool delete requires id."""
+        # No dependency check needed; validation fails before queue usage
+        result = handle_collection_tool({"function": "delete", "args": {}})
+        assert result["status"] == "error"
+        assert "id is required for delete" in result["error"]
 
     @patch('lrc_mcp.adapters.collections._check_lightroom_dependency')
     @patch('lrc_mcp.adapters.collections.get_queue')
