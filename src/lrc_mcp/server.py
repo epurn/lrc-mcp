@@ -22,16 +22,10 @@ from lrc_mcp.lightroom import (
     handle_kill_lightroom_tool,
 )
 from lrc_mcp.adapters.collections import (
-    get_add_collection_tool,
-    get_add_collection_set_tool,
-    get_remove_collection_tool,
-    get_remove_collection_set_tool,
-    get_edit_collection_tool,
-    handle_add_collection_tool,
-    handle_add_collection_set_tool,
-    handle_remove_collection_tool,
-    handle_remove_collection_set_tool,
-    handle_edit_collection_tool,
+    get_collection_set_tool,
+    get_collection_tool,
+    handle_collection_set_tool,
+    handle_collection_tool,
 )
 
 from lrc_mcp.adapters.lightroom import (
@@ -68,11 +62,8 @@ def create_server(version: str) -> Server:
             get_launch_lightroom_tool(),
             get_lightroom_version_tool(),
             get_kill_lightroom_tool(),
-            get_add_collection_tool(),
-            get_add_collection_set_tool(),
-            get_remove_collection_tool(),
-            get_remove_collection_set_tool(),
-            get_edit_collection_tool(),
+            get_collection_set_tool(),
+            get_collection_tool(),
             get_check_command_status_tool(),
             get_run_tests_tool(),
         ]
@@ -90,16 +81,10 @@ def create_server(version: str) -> Server:
             return handle_lightroom_version_tool()
         if name == "lrc_kill_lightroom":
             return handle_kill_lightroom_tool(arguments)
-        if name == "lrc_add_collection":
-            return handle_add_collection_tool(arguments)
-        if name == "lrc_add_collection_set":
-            return handle_add_collection_set_tool(arguments)
-        if name == "lrc_remove_collection":
-            return handle_remove_collection_tool(arguments)
-        if name == "lrc_remove_collection_set":
-            return handle_remove_collection_set_tool(arguments)
-        if name == "lrc_edit_collection":
-            return handle_edit_collection_tool(arguments)
+        if name == "lrc_collection_set":
+            return handle_collection_set_tool(arguments)
+        if name == "lrc_collection":
+            return handle_collection_tool(arguments)
         if name == "check_command_status":
             return handle_check_command_status_tool(arguments)
         if name == "lrc_run_tests":

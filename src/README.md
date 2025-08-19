@@ -46,6 +46,9 @@ uvicorn lrc_mcp.http_server:app --host 127.0.0.1 --port 8765 --reload
 - `lrc_add_collection`: create a new collection in Lightroom. **Requires Lightroom to be running.** Input: `{ name, parent_path, wait_timeout_sec }`. Returns `{ status, created, collection, command_id, error }`.
 - `lrc_remove_collection`: remove a collection from Lightroom. **Requires Lightroom to be running.** Input: `{ collection_path, wait_timeout_sec }`. Returns `{ status, removed, command_id, error }`.
 - `lrc_edit_collection`: edit (rename/move) a collection in Lightroom. **Requires Lightroom to be running.** Input: `{ collection_path, new_name, new_parent_path, wait_timeout_sec }`. Returns `{ status, updated, collection, command_id, error }`.
+- `lrc_collection`: unified collection dispatcher for list/create/edit/delete. **Requires Lightroom to be running.** Input: `{ function: "list"|"create"|"edit"|"delete", args: object, wait_timeout_sec?: number|null }`. Returns `{ status, result, command_id, error, deprecation? }`. Notes:
+  - Accepts legacy alias `function: "remove"` which maps to `delete` and sets a deprecation note.
+  - `list` supports optional filters `{ set_id?: string, name_contains?: string }` and returns `{ collections: [{ id, name, set_id, smart, photo_count, path }] }`.
 
 ### HTTP bridge (Step 4 foundation)
 Endpoints for the plugin:
