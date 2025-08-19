@@ -5,6 +5,7 @@ local Logger = require 'Logger'
 local TestAssertions = require 'TestAssertions'
 local CollectionUtils = require 'CollectionUtils'
 local CollectionCommands = require 'CollectionCommands'
+local CollectionSetCommands = require 'CollectionSetCommands'
 local WriteLock = require 'WriteLock'
 
 local TestRunner = {}
@@ -98,7 +99,7 @@ function TestRunner.test_collection_lifecycle()
   local test_collection_name = "Test_Collection_" .. os.time()
   local create_payload = '{"name":"' .. test_collection_name .. '","parent_path":""}'
   
-  local ok, result, err = CollectionCommands.handle_create_collection_command(create_payload)
+  local ok, result, err = CollectionCommands.handle_collection_create_command(create_payload)
   TestAssertions.assert_true(ok, "Collection Lifecycle - Create Root Collection", 
     ok and ("Created collection: " .. test_collection_name) or ("Failed to create collection: " .. tostring(err)))
   
@@ -114,7 +115,7 @@ function TestRunner.test_collection_lifecycle()
     if found_collection then
       -- Test 2: Remove collection
       local remove_payload = '{"collection_path":"' .. created_path .. '"}'
-      local remove_ok, remove_result, remove_err = CollectionCommands.handle_remove_collection_command(remove_payload)
+      local remove_ok, remove_result, remove_err = CollectionCommands.handle_collection_remove_command(remove_payload)
       TestAssertions.assert_true(remove_ok, "Collection Lifecycle - Remove Collection", 
         remove_ok and "Collection removed successfully" or ("Failed to remove collection: " .. tostring(remove_err)))
       
@@ -146,7 +147,7 @@ function TestRunner.test_collection_set_lifecycle()
   local test_set_name = "Test_Set_" .. os.time()
   local create_payload = '{"name":"' .. test_set_name .. '","parent_path":""}'
   
-  local ok, result, err = CollectionCommands.handle_create_collection_set_command(create_payload)
+  local ok, result, err = CollectionSetCommands.handle_collection_set_create_command(create_payload)
   TestAssertions.assert_true(ok, "Collection Set Lifecycle - Create Root Set", 
     ok and ("Created collection set: " .. test_set_name) or ("Failed to create collection set: " .. tostring(err)))
   
@@ -166,7 +167,7 @@ function TestRunner.test_collection_set_lifecycle()
       local test_coll_name = "Test_Coll_In_Set_" .. os.time()
       local coll_payload = '{"name":"' .. test_coll_name .. '","parent_path":"' .. created_path .. '"}'
       
-      local coll_ok, coll_result, coll_err = CollectionCommands.handle_create_collection_command(coll_payload)
+      local coll_ok, coll_result, coll_err = CollectionCommands.handle_collection_create_command(coll_payload)
       TestAssertions.assert_true(coll_ok, "Collection Set Lifecycle - Create Collection In Set", 
         coll_ok and ("Created collection in set: " .. test_coll_name) or ("Failed to create collection: " .. tostring(coll_err)))
       
@@ -182,7 +183,7 @@ function TestRunner.test_collection_set_lifecycle()
       
       -- Test 3: Remove collection set (should also remove contained collections)
       local remove_payload = '{"collection_path":"' .. created_path .. '"}'
-      local remove_ok, remove_result, remove_err = CollectionCommands.handle_remove_collection_command(remove_payload)
+      local remove_ok, remove_result, remove_err = CollectionCommands.handle_collection_delete_command(remove_payload)
       TestAssertions.assert_true(remove_ok, "Collection Set Lifecycle - Remove Set", 
         remove_ok and "Collection set removed successfully" or ("Failed to remove collection set: " .. tostring(remove_err)))
       
@@ -204,7 +205,7 @@ function TestRunner.test_error_paths()
   
   -- Test 1: Create collection without name (should fail)
   local no_name_payload = '{"name":"","parent_path":""}'
-  local ok, result, err = CollectionCommands.handle_create_collection_command(no_name_payload)
+  local ok, result, err = CollectionCommands.handle_collection_create_command(no_name_payload)
   TestAssertions.assert_true(not ok, "Error Paths - Create Collection No Name", 
     not ok and "Should fail when collection name is empty" or "Unexpectedly succeeded with empty name")
   TestAssertions.assert_string_contains(tostring(err), "required", "Error Paths - Error Message Check", 
@@ -212,7 +213,7 @@ function TestRunner.test_error_paths()
   
   -- Test 2: Create collection set without name (should fail)
   local no_set_name_payload = '{"name":"","parent_path":""}'
-  local set_ok, set_result, set_err = CollectionCommands.handle_create_collection_set_command(no_set_name_payload)
+  local set_ok, set_result, set_err = CollectionSetCommands.handle_collection_set_create_command(no_set_name_payload)
   TestAssertions.assert_true(not set_ok, "Error Paths - Create Set No Name", 
     not set_ok and "Should fail when collection set name is empty" or "Unexpectedly succeeded with empty name")
   TestAssertions.assert_string_contains(tostring(set_err), "required", "Error Paths - Set Error Message Check", 
@@ -221,13 +222,13 @@ function TestRunner.test_error_paths()
   -- Test 3: Remove non-existent collection (should not fail catastrophically)
   local fake_path = "NonExistent/Collection_" .. os.time()
   local remove_payload = '{"collection_path":"' .. fake_path .. '"}'
-  local remove_ok, remove_result, remove_err = CollectionCommands.handle_remove_collection_command(remove_payload)
+  local remove_ok, remove_result, remove_err = CollectionCommands.handle_collection_remove_command(remove_payload)
   TestAssertions.assert_true(remove_ok, "Error Paths - Remove Non-existent", 
     remove_ok and "Should handle non-existent collection gracefully" or ("Failed unexpectedly: " .. tostring(remove_err)))
   
   -- Test 4: Create collection with invalid parent (should fail)
   local invalid_parent_payload = '{"name":"Test_Invalid_Parent_' .. os.time() .. '","parent_path":"NonExistent/Parent"}'
-  local invalid_ok, invalid_result, invalid_err = CollectionCommands.handle_create_collection_command(invalid_parent_payload)
+  local invalid_ok, invalid_result, invalid_err = CollectionCommands.handle_collection_create_command(invalid_parent_payload)
   TestAssertions.assert_true(not invalid_ok, "Error Paths - Invalid Parent", 
     not invalid_ok and "Should fail with invalid parent path" or "Unexpectedly succeeded with invalid parent")
   

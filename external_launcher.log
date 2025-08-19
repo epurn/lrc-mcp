@@ -28,3 +28,23 @@
 2025-08-18 06:56:52,569 INFO Using bulletproof launcher: D:\Development\lrc-mcp\bulletproof_lightroom_launcher.py
 2025-08-18 06:56:56,008 INFO ✅ Bulletproof launcher succeeded
 2025-08-18 06:56:56,009 INFO External launcher completed successfully
+2025-08-19 18:47:11,357 INFO External launcher started
+2025-08-19 18:47:11,358 INFO Lightroom path provided: D:\Tools\Adobe\Adobe Lightroom Classic\Lightroom.exe
+2025-08-19 18:47:11,358 INFO Current working directory: d:\Development\lrc-mcp
+2025-08-19 18:47:11,359 INFO Lightroom path exists: True
+2025-08-19 18:47:11,359 INFO Lightroom path is file: True
+2025-08-19 18:47:11,359 INFO Lightroom file size: 34539496 bytes
+2025-08-19 18:47:11,359 INFO External launcher attempting to launch: D:\Tools\Adobe\Adobe Lightroom Classic\Lightroom.exe
+2025-08-19 18:47:11,359 INFO Using bulletproof launcher: d:\Development\lrc-mcp\bulletproof_lightroom_launcher.py
+2025-08-19 18:47:14,853 INFO ✅ Bulletproof launcher succeeded
+2025-08-19 18:47:14,853 INFO External launcher completed successfully
+2025-08-19 18:47:35,637 INFO External launcher started
+2025-08-19 18:47:35,637 INFO Lightroom path provided: D:\Tools\Adobe\Adobe Lightroom Classic\Lightroom.exe
+2025-08-19 18:47:35,637 INFO Current working directory: d:\Development\lrc-mcp
+2025-08-19 18:47:35,637 INFO Lightroom path exists: True
+2025-08-19 18:47:35,637 INFO Lightroom path is file: True
+2025-08-19 18:47:35,637 INFO Lightroom file size: 34539496 bytes
+2025-08-19 18:47:35,637 INFO External launcher attempting to launch: D:\Tools\Adobe\Adobe Lightroom Classic\Lightroom.exe
+2025-08-19 18:47:35,637 INFO Using bulletproof launcher: d:\Development\lrc-mcp\bulletproof_lightroom_launcher.py
+2025-08-19 18:47:39,114 INFO ✅ Bulletproof launcher succeeded
+2025-08-19 18:47:39,114 INFO External launcher completed successfully

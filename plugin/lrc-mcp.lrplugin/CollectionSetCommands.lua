@@ -674,8 +674,17 @@ function CollectionSetCommands.handle_collection_set_remove_command(payload_raw)
   Logger.info('handle_collection_set_remove_command payload_raw: ' .. tostring(payload_raw))
   local args = nil
   if payload_raw and type(payload_raw) == 'string' and #payload_raw > 0 then
-    args = Utils.extract_json_value(payload_raw)
+    -- Try to parse as JSON object directly (new format from Python adapter)
+    local id = Utils.extract_json_value(payload_raw, "id")
+    local path = Utils.extract_json_value(payload_raw, "path") or Utils.extract_json_value(payload_raw, "collection_set_path")
+    if id or path then
+      args = { id = id, path = path }
+    else
+      -- Fallback to old format where payload_raw is the args JSON string
+      args = Utils.extract_json_value(payload_raw)
+    end
   end
+  Logger.info('Parsed remove args - id: ' .. tostring(args and args.id) .. ', path: ' .. tostring(args and args.path))
   return CollectionSetCommands.handle_collection_set_delete_command(args)
 end
 
