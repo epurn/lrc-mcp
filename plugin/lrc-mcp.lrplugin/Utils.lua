@@ -102,6 +102,14 @@ function Utils.extract_json_value(json_str, key)
     Logger.info('extract_json_value: found false for key "' .. key .. '"')
     return false
   end
+
+  -- Handle numeric values (integers/floats)
+  local num_match = json_str:match('"' .. key .. '"%s*:%s*(-?%d+%.?%d*)')
+  if num_match then
+    Logger.info('extract_json_value: found number match for key "' .. key .. '": ' .. num_match)
+    -- Return as string to keep downstream comparisons simple (tostring on IDs)
+    return num_match
+  end
   
   Logger.info('extract_json_value: no match found for key "' .. key .. '"')
   return nil

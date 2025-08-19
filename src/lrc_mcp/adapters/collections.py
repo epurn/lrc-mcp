@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from datetime import datetime, timedelta, timezone
 
 import logging
@@ -15,27 +15,27 @@ logger = logging.getLogger(__name__)
 
 def _is_lightroom_running() -> bool:
     """Check if Lightroom is running and the plugin is connected.
-    
+
     Returns:
         True if Lightroom is running and plugin is connected, False otherwise
     """
     store = get_store()
     heartbeat = store.get_last_heartbeat()
-    
+
     if not heartbeat:
         return False
-    
+
     # Check if the heartbeat is recent (within last 30 seconds)
     now = datetime.now(timezone.utc)
     if heartbeat.received_at < now - timedelta(seconds=30):
         return False
-    
+
     return True
 
 
 def _check_lightroom_dependency() -> Dict[str, Any] | None:
     """Check if Lightroom is running and return error response if not.
-    
+
     Returns:
         None if Lightroom is running, error response dict if not
     """
@@ -47,586 +47,161 @@ def _check_lightroom_dependency() -> Dict[str, Any] | None:
             "created": None,
             "removed": None,
             "updated": None,
-            "collection": None
+            "collection": None,
         }
     return None
 
 
-def get_add_collection_tool() -> mcp_types.Tool:
-    """Get the add collection tool definition."""
-    return mcp_types.Tool(
-        name="lrc_add_collection",
-        description="Does create a new collection in Lightroom Classic. Requires Lightroom to be running with plugin connected. Parent collection sets must already exist. Returns collection information and creation status.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Name of the collection to create"},
-                "parent_path": {
-                    "type": ["string", "null"], 
-                    "description": "Parent collection set path (e.g., 'Sets/Nature'; null or '' means root). Parent sets must already exist."
-                },
-                "wait_timeout_sec": {
-                    "type": ["number", "null"],
-                    "minimum": 0,
-                    "description": "Wait timeout in seconds (default 5; 0 to return immediately)"
-                }
-            },
-            "required": ["name"],
-            "additionalProperties": False,
-        },
-        outputSchema={
-            "type": "object",
-            "properties": {
-                "status": {"type": "string", "enum": ["ok", "pending", "error"], "description": "Operation status: ok (completed), pending (in progress), error (failed)"},
-                "created": {"type": ["boolean", "null"], "description": "True if collection was created, False if not, null if pending"},
-                "collection": {
-                    "type": ["object", "null"],
-                    "properties": {
-                        "id": {"type": ["string", "null"], "description": "Collection identifier"},
-                        "name": {"type": "string", "description": "Collection name"},
-                        "path": {"type": "string", "description": "Full collection path"}
-                    },
-                    "required": ["id", "name", "path"],
-                    "additionalProperties": False
-                },
-                "command_id": {"type": ["string", "null"], "description": "Command identifier for tracking asynchronous operations"},
-                "error": {"type": ["string", "null"], "description": "Error message if operation failed, null otherwise"}
-            },
-            "required": ["status", "created", "collection", "command_id", "error"],
-            "additionalProperties": False,
-        },
+# -------------------------
+# Internal helper functions
+# -------------------------
+
+def _normalize_wait_timeout(value: Any, default: float = 5) -> float:
+    """Normalize wait timeout to a non-negative float, fallback to default."""
+    if value is None:
+        return default
+    if isinstance(value, (int, float)) and value >= 0:
+        return float(value)
+    return default
+
+
+def _with_optional_deprecation(
+    payload: Dict[str, Any],
+    deprecation: Optional[str],
+) -> Dict[str, Any]:
+    """Attach a deprecation field to payload if provided, else return as-is."""
+    if deprecation is not None:
+        payload = {**payload, "deprecation": deprecation}
+    return payload
+
+
+def _enqueue_and_maybe_wait(
+    queue: Any,
+    type_name: str,
+    payload: Dict[str, Any],
+    wait_timeout_sec: float,
+    deprecation: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Enqueue a command and optionally wait for a result, returning a normalized response.
+
+    Args:
+        queue: Command queue instance.
+        type_name: Command type (e.g., "collection", "collection_set").
+        payload: Payload to enqueue.
+        wait_timeout_sec: Seconds to wait for result; 0 returns immediately.
+        deprecation: Optional deprecation note to include (collection tool only).
+
+    Returns:
+        Normalized tool response dict.
+    """
+    command_id = queue.enqueue(type=type_name, payload=payload)
+
+    if wait_timeout_sec > 0:
+        result = queue.wait_for_result(command_id, wait_timeout_sec)
+        if result is None:
+            return _with_optional_deprecation(
+                {"status": "pending", "result": None, "command_id": command_id, "error": None},
+                deprecation,
+            )
+        if result.ok and result.result is not None:
+            return _with_optional_deprecation(
+                {"status": "ok", "result": result.result, "command_id": command_id, "error": None},
+                deprecation,
+            )
+        return _with_optional_deprecation(
+            {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error"},
+            deprecation,
+        )
+
+    return _with_optional_deprecation(
+        {"status": "pending", "result": None, "command_id": command_id, "error": None},
+        deprecation,
     )
 
 
-def get_add_collection_set_tool() -> mcp_types.Tool:
-    """Get the add collection set tool definition."""
-    return mcp_types.Tool(
-        name="lrc_add_collection_set",
-        description="Does create a new collection set in Lightroom Classic. Requires Lightroom to be running with plugin connected. Parent collection sets must already exist. Returns collection set information and creation status.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Name of the collection set to create"},
-                "parent_path": {
-                    "type": ["string", "null"], 
-                    "description": "Parent collection set path (e.g., 'Sets/Nature'; null or '' means root). Parent sets must already exist."
-                },
-                "wait_timeout_sec": {
-                    "type": ["number", "null"],
-                    "minimum": 0,
-                    "description": "Wait timeout in seconds (default 5; 0 to return immediately)"
-                }
-            },
-            "required": ["name"],
-            "additionalProperties": False,
-        },
-        outputSchema={
-            "type": "object",
-            "properties": {
-                "status": {"type": "string", "enum": ["ok", "pending", "error"], "description": "Operation status: ok (completed), pending (in progress), error (failed)"},
-                "created": {"type": ["boolean", "null"], "description": "True if collection set was created, False if not, null if pending"},
-                "collection_set": {
-                    "type": ["object", "null"],
-                    "properties": {
-                        "id": {"type": ["string", "null"], "description": "Collection set identifier"},
-                        "name": {"type": "string", "description": "Collection set name"},
-                        "path": {"type": "string", "description": "Full collection set path"}
-                    },
-                    "required": ["id", "name", "path"],
-                    "additionalProperties": False
-                },
-                "command_id": {"type": ["string", "null"], "description": "Command identifier for tracking asynchronous operations"},
-                "error": {"type": ["string", "null"], "description": "Error message if operation failed, null otherwise"}
-            },
-            "required": ["status", "created", "collection_set", "command_id", "error"],
-            "additionalProperties": False,
-        },
-    )
+def _extract_target_identifier(args: Dict[str, Any], path_alias_key: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Extract target identifier for edit/delete operations.
+
+    Gives precedence to 'id' over 'path'. Accepts a legacy alias for path.
+
+    Args:
+        args: Arguments dict.
+        path_alias_key: Legacy alias key name for 'path' (e.g., 'collection_path', 'collection_set_path').
+
+    Returns:
+        (identifier_key, identifier_value, error_message)
+        If error_message is not None, identifier_key/value will be None.
+    """
+    target_id = args.get("id")
+    target_path = args.get("path") or args.get(path_alias_key)
+
+    if not target_id and not target_path:
+        return None, None, "Either 'id' or 'path' is required"
+
+    if target_id:
+        return "id", target_id, None
+    return "path", target_path, None
 
 
-def get_remove_collection_tool() -> mcp_types.Tool:
-    """Get the remove collection tool definition."""
-    return mcp_types.Tool(
-        name="lrc_remove_collection",
-        description="Does remove a collection from Lightroom Classic. Requires Lightroom to be running with plugin connected. Returns removal status and operation information.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "collection_path": {
-                    "type": "string",
-                    "description": "Collection path (e.g., 'Sets/Nature/Birds' or just 'Birds' at root)"
-                },
-                "wait_timeout_sec": {
-                    "type": ["number", "null"],
-                    "minimum": 0,
-                    "description": "Wait timeout in seconds (default 5; 0 to return immediately)"
-                }
-            },
-            "required": ["collection_path"],
-            "additionalProperties": False,
-        },
-        outputSchema={
-            "type": "object",
-            "properties": {
-                "status": {"type": "string", "enum": ["ok", "pending", "error"], "description": "Operation status: ok (completed), pending (in progress), error (failed)"},
-                "removed": {"type": ["boolean", "null"], "description": "True if collection was removed, False if not, null if pending"},
-                "command_id": {"type": ["string", "null"], "description": "Command identifier for tracking asynchronous operations"},
-                "error": {"type": ["string", "null"], "description": "Error message if operation failed, null otherwise"}
-            },
-            "required": ["status", "removed", "command_id", "error"],
-            "additionalProperties": False,
-        },
-    )
+def _build_collection_set_list_payload(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Build payload for collection_set list operation with unified shape."""
+    parent_id = args.get("parent_id")
+    parent_path = args.get("parent_path")
+    name_contains = args.get("name_contains")
 
-
-def get_edit_collection_tool() -> mcp_types.Tool:
-    """Get the edit collection tool definition."""
-    return mcp_types.Tool(
-        name="lrc_edit_collection",
-        description="Does edit (rename/move) a collection in Lightroom Classic. Requires Lightroom to be running with plugin connected. Can change collection name and/or move to different parent. Returns updated collection information and operation status.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "collection_path": {
-                    "type": "string",
-                    "description": "Current collection path"
-                },
-                "new_name": {
-                    "type": ["string", "null"],
-                    "description": "New name for the collection (optional)"
-                },
-                "new_parent_path": {
-                    "type": ["string", "null"],
-                    "description": "New parent path (move to another collection set or root if null/'') (optional)"
-                },
-                "wait_timeout_sec": {
-                    "type": ["number", "null"],
-                    "minimum": 0,
-                    "description": "Wait timeout in seconds (default 5; 0 to return immediately)"
-                }
-            },
-            "required": ["collection_path"],
-            "additionalProperties": False,
-        },
-        outputSchema={
-            "type": "object",
-            "properties": {
-                "status": {"type": "string", "enum": ["ok", "pending", "error"], "description": "Operation status: ok (completed), pending (in progress), error (failed)"},
-                "updated": {"type": ["boolean", "null"], "description": "True if collection was updated, False if not, null if pending"},
-                "collection": {
-                    "type": ["object", "null"],
-                    "properties": {
-                        "id": {"type": ["string", "null"], "description": "Collection identifier"},
-                        "name": {"type": "string", "description": "Collection name"},
-                        "path": {"type": "string", "description": "Full collection path"}
-                    },
-                    "required": ["id", "name", "path"],
-                    "additionalProperties": False
-                },
-                "command_id": {"type": ["string", "null"], "description": "Command identifier for tracking asynchronous operations"},
-                "error": {"type": ["string", "null"], "description": "Error message if operation failed, null otherwise"}
-            },
-            "required": ["status", "updated", "collection", "command_id", "error"],
-            "additionalProperties": False,
-        },
-    )
-
-
-def get_remove_collection_set_tool() -> mcp_types.Tool:
-    """Get the remove collection set tool definition."""
-    return mcp_types.Tool(
-        name="lrc_remove_collection_set",
-        description="Does remove a collection set from Lightroom Classic. Requires Lightroom to be running with plugin connected. Returns removal status and operation information.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "collection_set_path": {
-                    "type": "string",
-                    "description": "Collection set path (e.g., 'Sets/Nature' or just 'Nature' at root)"
-                },
-                "wait_timeout_sec": {
-                    "type": ["number", "null"],
-                    "minimum": 0,
-                    "description": "Wait timeout in seconds (default 5; 0 to return immediately)"
-                }
-            },
-            "required": ["collection_set_path"],
-            "additionalProperties": False,
-        },
-        outputSchema={
-            "type": "object",
-            "properties": {
-                "status": {"type": "string", "enum": ["ok", "pending", "error"], "description": "Operation status: ok (completed), pending (in progress), error (failed)"},
-                "removed": {"type": ["boolean", "null"], "description": "True if collection set was removed, False if not, null if pending"},
-                "command_id": {"type": ["string", "null"], "description": "Command identifier for tracking asynchronous operations"},
-                "error": {"type": ["string", "null"], "description": "Error message if operation failed, null otherwise"}
-            },
-            "required": ["status", "removed", "command_id", "error"],
-            "additionalProperties": False,
-        },
-    )
-
-
-def handle_add_collection_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
-    """Handle the add collection tool call."""
-    # Check if Lightroom is running first
-    dependency_error = _check_lightroom_dependency()
-    if dependency_error:
-        return dependency_error
-    
-    if not arguments:
-        return {"status": "error", "created": None, "collection": None, "command_id": None, "error": "No arguments provided"}
-    
-    name = arguments.get("name")
-    if not name or not isinstance(name, str):
-        return {"status": "error", "created": None, "collection": None, "command_id": None, "error": "Collection name is required"}
-    
-    parent_path = arguments.get("parent_path")
+    if parent_id is not None and not isinstance(parent_id, str):
+        parent_id = None
     if parent_path is not None and not isinstance(parent_path, str):
         parent_path = None
-    
-    wait_timeout_sec = arguments.get("wait_timeout_sec")
-    if wait_timeout_sec is not None:
-        if not isinstance(wait_timeout_sec, (int, float)) or wait_timeout_sec < 0:
-            wait_timeout_sec = 5  # reduced default timeout
-    else:
-        wait_timeout_sec = 5  # reduced default timeout
-    
-    # Enqueue the command
-    queue = get_queue()
-    payload = {
-        "name": name,
-        "parent_path": parent_path
-    }
-    command_id = queue.enqueue(
-        type="collection.create",
-        payload=payload
-    )
-    
-    # Wait for result if timeout > 0
-    if wait_timeout_sec > 0:
-        result = queue.wait_for_result(command_id, wait_timeout_sec)
-        if result is None:
-            # Timeout - return pending
-            return {
-                "status": "pending",
-                "created": None,
-                "collection": None,
-                "command_id": command_id,
-                "error": None
-            }
-        elif result.ok and result.result:
-            return {
-                "status": "ok",
-                "created": result.result.get("created"),
-                "collection": result.result.get("collection"),
-                "command_id": command_id,
-                "error": None
-            }
-        else:
-            return {
-                "status": "error",
-                "created": None,
-                "collection": None,
-                "command_id": command_id,
-                "error": result.error or "Unknown error"
-            }
-    else:
-        # Return immediately
-        return {
-            "status": "pending",
-            "created": None,
-            "collection": None,
-            "command_id": command_id,
-            "error": None
-        }
+    if name_contains is not None and not isinstance(name_contains, str):
+        name_contains = None
+
+    payload: Dict[str, Any] = {}
+    if parent_id:
+        payload["parent_id"] = parent_id
+    elif parent_path is not None:
+        payload["parent_path"] = parent_path
+    if name_contains:
+        payload["name_contains"] = name_contains
+
+    return payload
 
 
-def handle_remove_collection_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
-    """Handle the remove collection tool call."""
-    # Check if Lightroom is running first
-    dependency_error = _check_lightroom_dependency()
-    if dependency_error:
-        return dependency_error
-    
-    if not arguments:
-        return {"status": "error", "removed": None, "command_id": None, "error": "No arguments provided"}
-    
-    collection_path = arguments.get("collection_path")
-    if not collection_path or not isinstance(collection_path, str):
-        return {"status": "error", "removed": None, "command_id": None, "error": "Collection path is required"}
-    
-    wait_timeout_sec = arguments.get("wait_timeout_sec")
-    if wait_timeout_sec is not None:
-        if not isinstance(wait_timeout_sec, (int, float)) or wait_timeout_sec < 0:
-            wait_timeout_sec = 5  # reduced default timeout
-    else:
-        wait_timeout_sec = 5  # reduced default timeout
-    
-    # Enqueue the command
-    queue = get_queue()
-    payload = {
-        "collection_path": collection_path
-    }
-    command_id = queue.enqueue(
-        type="collection.remove",
-        payload=payload
-    )
-    
-    # Wait for result if timeout > 0
-    if wait_timeout_sec > 0:
-        result = queue.wait_for_result(command_id, wait_timeout_sec)
-        if result is None:
-            # Timeout - return pending
-            return {
-                "status": "pending",
-                "removed": None,
-                "command_id": command_id,
-                "error": None
-            }
-        elif result.ok and result.result:
-            return {
-                "status": "ok",
-                "removed": result.result.get("removed"),
-                "command_id": command_id,
-                "error": None
-            }
-        else:
-            return {
-                "status": "error",
-                "removed": None,
-                "command_id": command_id,
-                "error": result.error or "Unknown error"
-            }
-    else:
-        # Return immediately
-        return {
-            "status": "pending",
-            "removed": None,
-            "command_id": command_id,
-            "error": None
-        }
+def _build_collection_list_payload(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Build payload for collection list operation."""
+    parent_id = args.get("parent_id") or args.get("set_id")  # Accept legacy name
+    parent_path = args.get("parent_path")
+    name_contains = args.get("name_contains")
+
+    if parent_id is not None and not isinstance(parent_id, str):
+        parent_id = None
+    if parent_path is not None and not isinstance(parent_path, str):
+        parent_path = None
+    if name_contains is not None and not isinstance(name_contains, str):
+        name_contains = None
+
+    payload: Dict[str, Any] = {}
+    if parent_id:
+        payload["set_id"] = parent_id  # Map to legacy key for compatibility
+    elif parent_path is not None:
+        payload["parent_path"] = parent_path
+    if name_contains:
+        payload["name_contains"] = name_contains
+
+    return payload
 
 
-def handle_edit_collection_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
-    """Handle the edit collection tool call."""
-    # Check if Lightroom is running first
-    dependency_error = _check_lightroom_dependency()
-    if dependency_error:
-        return dependency_error
-    
-    if not arguments:
-        return {"status": "error", "updated": None, "collection": None, "command_id": None, "error": "No arguments provided"}
-    
-    collection_path = arguments.get("collection_path")
-    if not collection_path or not isinstance(collection_path, str):
-        return {"status": "error", "updated": None, "collection": None, "command_id": None, "error": "Collection path is required"}
-    
-    new_name = arguments.get("new_name")
-    if new_name is not None and not isinstance(new_name, str):
-        new_name = None
-    
-    new_parent_path = arguments.get("new_parent_path")
+def _normalize_new_parent_args(args: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    """Normalize new_parent_id/new_parent_path edit arguments."""
+    new_parent_id = args.get("new_parent_id")
+    new_parent_path = args.get("new_parent_path")
+
+    if new_parent_id is not None and not isinstance(new_parent_id, str):
+        new_parent_id = None
     if new_parent_path is not None and not isinstance(new_parent_path, str):
         new_parent_path = None
-    
-    wait_timeout_sec = arguments.get("wait_timeout_sec")
-    if wait_timeout_sec is not None:
-        if not isinstance(wait_timeout_sec, (int, float)) or wait_timeout_sec < 0:
-            wait_timeout_sec = 5  # reduced default timeout
-    else:
-        wait_timeout_sec = 5  # reduced default timeout
-    
-    # Enqueue the command
-    queue = get_queue()
-    payload = {
-        "collection_path": collection_path,
-        "new_name": new_name,
-        "new_parent_path": new_parent_path
-    }
-    command_id = queue.enqueue(
-        type="collection.edit",
-        payload=payload
-    )
-    
-    # Wait for result if timeout > 0
-    if wait_timeout_sec > 0:
-        result = queue.wait_for_result(command_id, wait_timeout_sec)
-        if result is None:
-            # Timeout - return pending
-            return {
-                "status": "pending",
-                "updated": None,
-                "collection": None,
-                "command_id": command_id,
-                "error": None
-            }
-        elif result.ok and result.result:
-            return {
-                "status": "ok",
-                "updated": result.result.get("updated"),
-                "collection": result.result.get("collection"),
-                "command_id": command_id,
-                "error": None
-            }
-        else:
-            return {
-                "status": "error",
-                "updated": None,
-                "collection": None,
-                "command_id": command_id,
-                "error": result.error or "Unknown error"
-            }
-    else:
-        # Return immediately
-        return {
-            "status": "pending",
-            "updated": None,
-            "collection": None,
-            "command_id": command_id,
-            "error": None
-        }
 
-
-def handle_add_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
-    """Handle the add collection set tool call."""
-    # Check if Lightroom is running first
-    dependency_error = _check_lightroom_dependency()
-    if dependency_error:
-        return dependency_error
-    
-    if not arguments:
-        return {"status": "error", "created": None, "collection_set": None, "command_id": None, "error": "No arguments provided"}
-    
-    name = arguments.get("name")
-    if not name or not isinstance(name, str):
-        return {"status": "error", "created": None, "collection_set": None, "command_id": None, "error": "Collection set name is required"}
-    
-    parent_path = arguments.get("parent_path")
-    if parent_path is not None and not isinstance(parent_path, str):
-        parent_path = None
-    
-    wait_timeout_sec = arguments.get("wait_timeout_sec")
-    if wait_timeout_sec is not None:
-        if not isinstance(wait_timeout_sec, (int, float)) or wait_timeout_sec < 0:
-            wait_timeout_sec = 5  # reduced default timeout
-    else:
-        wait_timeout_sec = 5  # reduced default timeout
-    
-    # Enqueue the command
-    queue = get_queue()
-    payload = {
-        "name": name,
-        "parent_path": parent_path
-    }
-    command_id = queue.enqueue(
-        type="collection_set.create",
-        payload=payload
-    )
-    
-    # Wait for result if timeout > 0
-    if wait_timeout_sec > 0:
-        result = queue.wait_for_result(command_id, wait_timeout_sec)
-        if result is None:
-            # Timeout - return pending
-            return {
-                "status": "pending",
-                "created": None,
-                "collection_set": None,
-                "command_id": command_id,
-                "error": None
-            }
-        elif result.ok and result.result:
-            return {
-                "status": "ok",
-                "created": result.result.get("created"),
-                "collection_set": result.result.get("collection_set"),
-                "command_id": command_id,
-                "error": None
-            }
-        else:
-            return {
-                "status": "error",
-                "created": None,
-                "collection_set": None,
-                "command_id": command_id,
-                "error": result.error or "Unknown error"
-            }
-    else:
-        # Return immediately
-        return {
-            "status": "pending",
-            "created": None,
-            "collection_set": None,
-            "command_id": command_id,
-            "error": None
-        }
-
-
-def handle_remove_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
-    """Handle the remove collection set tool call."""
-    # Check if Lightroom is running first
-    dependency_error = _check_lightroom_dependency()
-    if dependency_error:
-        return dependency_error
-    
-    if not arguments:
-        return {"status": "error", "removed": None, "command_id": None, "error": "No arguments provided"}
-    
-    collection_set_path = arguments.get("collection_set_path")
-    if not collection_set_path or not isinstance(collection_set_path, str):
-        return {"status": "error", "removed": None, "command_id": None, "error": "Collection set path is required"}
-    
-    wait_timeout_sec = arguments.get("wait_timeout_sec")
-    if wait_timeout_sec is not None:
-        if not isinstance(wait_timeout_sec, (int, float)) or wait_timeout_sec < 0:
-            wait_timeout_sec = 5  # reduced default timeout
-    else:
-        wait_timeout_sec = 5  # reduced default timeout
-    
-    # Enqueue the command
-    queue = get_queue()
-    payload = {
-        "collection_set_path": collection_set_path
-    }
-    command_id = queue.enqueue(
-        type="collection_set.remove",
-        payload=payload
-    )
-    
-    # Wait for result if timeout > 0
-    if wait_timeout_sec > 0:
-        result = queue.wait_for_result(command_id, wait_timeout_sec)
-        if result is None:
-            # Timeout - return pending
-            return {
-                "status": "pending",
-                "removed": None,
-                "command_id": command_id,
-                "error": None
-            }
-        elif result.ok and result.result:
-            return {
-                "status": "ok",
-                "removed": result.result.get("removed"),
-                "command_id": command_id,
-                "error": None
-            }
-        else:
-            return {
-                "status": "error",
-                "removed": None,
-                "command_id": command_id,
-                "error": result.error or "Unknown error"
-            }
-    else:
-        # Return immediately
-        return {
-            "status": "pending",
-            "removed": None,
-            "command_id": command_id,
-            "error": None
-        }
+    return new_parent_id, new_parent_path
 
 
 # -------------------------------
@@ -647,22 +222,22 @@ def get_collection_set_tool() -> mcp_types.Tool:
                 "function": {
                     "type": "string",
                     "enum": ["list", "create", "edit", "delete"],
-                    "description": "Collection set action to perform"
+                    "description": "Collection set action to perform",
                 },
                 "args": {
                     "type": "object",
                     "description": "Arguments for the selected function",
-                    "additionalProperties": True
+                    "additionalProperties": True,
                 },
                 "wait_timeout_sec": {
                     "type": ["number", "null"],
                     "minimum": 0,
                     "default": 5,
-                    "description": "Wait for plugin result; 0 to return immediately"
-                }
+                    "description": "Wait for plugin result; 0 to return immediately",
+                },
             },
             "required": ["function"],
-            "additionalProperties": False
+            "additionalProperties": False,
         },
         outputSchema={
             "type": "object",
@@ -670,147 +245,125 @@ def get_collection_set_tool() -> mcp_types.Tool:
                 "status": {
                     "type": "string",
                     "enum": ["ok", "pending", "error"],
-                    "description": "Operation status"
+                    "description": "Operation status",
                 },
                 "result": {
                     "type": ["object", "null"],
-                    "description": "Function-specific result payload. list: { collection_sets: [...] }. create: { created, collection_set }. edit: { updated, collection_set }. delete: { removed }."
+                    "description": "Function-specific result payload. list: { collection_sets: [...] }. create: { created, collection_set }. edit: { updated, collection_set }. delete: { removed }.",
                 },
                 "command_id": {
                     "type": ["string", "null"],
-                    "description": "Command identifier for async tracking"
+                    "description": "Command identifier for async tracking",
                 },
                 "error": {
                     "type": ["string", "null"],
-                    "description": "Error message if any"
-                }
+                    "description": "Error message if any",
+                },
+                "deprecation": {
+                    "type": ["string", "null"],
+                    "description": "Deprecation note when using deprecated alias (e.g., 'remove' -> 'delete')",
+                },
             },
             "required": ["status", "result", "command_id", "error"],
-            "additionalProperties": False
-        }
+            "additionalProperties": False,
+        },
     )
 
 
 def handle_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
     """Handle the unified collection set tool call.
 
-    Supports function=list|create|edit|delete with corresponding args.
+    Supports function=list|create|edit|delete with corresponding args using unified argument contract.
     """
+    deprecation: Optional[str] = None
+
+    if not arguments or not isinstance(arguments, dict):
+        return {"status": "error", "result": None, "command_id": None, "error": "No arguments provided", "deprecation": deprecation}
+
+    func = arguments.get("function")
+    if func == "remove":
+        # Backward compatibility: map remove -> delete
+        logger.warning("lrc_collection_set: 'remove' is deprecated; use 'delete' instead.")
+        func = "delete"
+        deprecation = "Function 'remove' is deprecated; use 'delete' instead."
+    if func not in {"list", "create", "edit", "delete"}:
+        return {"status": "error", "result": None, "command_id": None, "error": "Invalid function. Expected one of: list, create, edit, delete", "deprecation": deprecation}
+
+    args = arguments.get("args") or {}
+    if not isinstance(args, dict):
+        return {"status": "error", "result": None, "command_id": None, "error": "args must be an object", "deprecation": deprecation}
+
+    # For edit/delete, validate identifier presence before dependency check
+    identifier_key: Optional[str] = None
+    identifier_value: Optional[str] = None
+    if func in {"edit", "delete"}:
+        identifier_key, identifier_value, id_err = _extract_target_identifier(args, "collection_set_path")
+        if id_err:
+            return {"status": "error", "result": None, "command_id": None, "error": f"{id_err} for {func}", "deprecation": deprecation}
+
+    # Perform dependency check after argument validation to surface schema errors first
     dependency_error = _check_lightroom_dependency()
     if dependency_error:
-        # Normalize to this tool's output schema
         return {
             "status": "error",
             "result": None,
             "command_id": None,
-            "error": dependency_error.get("error") if isinstance(dependency_error, dict) else "Lightroom dependency check failed"
+            "error": dependency_error.get("error") if isinstance(dependency_error, dict) else "Lightroom dependency check failed",
+            "deprecation": deprecation,
         }
 
-    if not arguments or not isinstance(arguments, dict):
-        return {"status": "error", "result": None, "command_id": None, "error": "No arguments provided"}
-
-    func = arguments.get("function")
-    if func not in {"list", "create", "edit", "delete"}:
-        return {"status": "error", "result": None, "command_id": None, "error": "Invalid function. Expected one of: list, create, edit, delete"}
-
-    args = arguments.get("args") or {}
-    if not isinstance(args, dict):
-        return {"status": "error", "result": None, "command_id": None, "error": "args must be an object"}
-
-    wait_timeout_sec = arguments.get("wait_timeout_sec")
-    if wait_timeout_sec is not None:
-        if not isinstance(wait_timeout_sec, (int, float)) or wait_timeout_sec < 0:
-            wait_timeout_sec = 5
-    else:
-        wait_timeout_sec = 5
+    wait_timeout_sec = _normalize_wait_timeout(arguments.get("wait_timeout_sec"))
 
     queue = get_queue()
 
     if func == "list":
-        parent_path = args.get("parent_path")
-        if parent_path is not None and not isinstance(parent_path, str):
-            parent_path = None
-
-        # Optional recursive flag: default to True to include all nested sets
-        include_nested = args.get("include_nested")
-        if include_nested is None:
-            include_nested = True
-        elif not isinstance(include_nested, bool):
-            include_nested = True
-
-        command_id = queue.enqueue(
-            type="collection_set.list",
-            payload={"parent_path": parent_path, "include_nested": include_nested},
-        )
-        if wait_timeout_sec > 0:
-            result = queue.wait_for_result(command_id, wait_timeout_sec)
-            if result is None:
-                return {"status": "pending", "result": None, "command_id": command_id, "error": None}
-            if result.ok and result.result is not None:
-                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None}
-            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error"}
-        return {"status": "pending", "result": None, "command_id": command_id, "error": None}
+        payload = _build_collection_set_list_payload(args)
+        return _enqueue_and_maybe_wait(queue, "collection_set.list", payload, wait_timeout_sec, deprecation)
 
     if func == "create":
         name = args.get("name")
         if not name or not isinstance(name, str):
-            return {"status": "error", "result": None, "command_id": None, "error": "name is required for create"}
+            return {"status": "error", "result": None, "command_id": None, "error": "name is required for create", "deprecation": deprecation}
+
+        parent_id = args.get("parent_id")
         parent_path = args.get("parent_path")
+
+        if parent_id is not None and not isinstance(parent_id, str):
+            parent_id = None
         if parent_path is not None and not isinstance(parent_path, str):
             parent_path = None
-        command_id = queue.enqueue(type="collection_set.create", payload={"name": name, "parent_path": parent_path})
-        if wait_timeout_sec > 0:
-            result = queue.wait_for_result(command_id, wait_timeout_sec)
-            if result is None:
-                return {"status": "pending", "result": None, "command_id": command_id, "error": None}
-            if result.ok and result.result is not None:
-                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None}
-            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error"}
-        return {"status": "pending", "result": None, "command_id": command_id, "error": None}
+
+        payload: Dict[str, Any] = {"name": name}
+        if parent_id:
+            payload["parent_id"] = parent_id
+        elif parent_path is not None:
+            payload["parent_path"] = parent_path
+
+        return _enqueue_and_maybe_wait(queue, "collection_set.create", payload, wait_timeout_sec, deprecation)
 
     if func == "edit":
-        collection_set_path = args.get("collection_set_path")
-        if not collection_set_path or not isinstance(collection_set_path, str):
-            return {"status": "error", "result": None, "command_id": None, "error": "collection_set_path is required for edit"}
         new_name = args.get("new_name")
         if new_name is not None and not isinstance(new_name, str):
             new_name = None
-        new_parent_path = args.get("new_parent_path")
-        if new_parent_path is not None and not isinstance(new_parent_path, str):
-            new_parent_path = None
-        command_id = queue.enqueue(
-            type="collection_set.edit",
-            payload={
-                "collection_set_path": collection_set_path,
-                "new_name": new_name,
-                "new_parent_path": new_parent_path,
-            },
-        )
-        if wait_timeout_sec > 0:
-            result = queue.wait_for_result(command_id, wait_timeout_sec)
-            if result is None:
-                return {"status": "pending", "result": None, "command_id": command_id, "error": None}
-            if result.ok and result.result is not None:
-                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None}
-            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error"}
-        return {"status": "pending", "result": None, "command_id": command_id, "error": None}
+        new_parent_id, new_parent_path = _normalize_new_parent_args(args)
+
+        payload: Dict[str, Any] = {}
+        payload[str(identifier_key)] = identifier_value  # type: ignore[index]
+        if new_name:
+            payload["new_name"] = new_name
+        if new_parent_id:
+            payload["new_parent_id"] = new_parent_id
+        elif new_parent_path is not None:
+            payload["new_parent_path"] = new_parent_path
+
+        return _enqueue_and_maybe_wait(queue, "collection_set.edit", payload, wait_timeout_sec, deprecation)
 
     if func == "delete":
-        collection_set_path = args.get("collection_set_path")
-        if not collection_set_path or not isinstance(collection_set_path, str):
-            return {"status": "error", "result": None, "command_id": None, "error": "collection_set_path is required for delete"}
-        command_id = queue.enqueue(type="collection_set.remove", payload={"collection_set_path": collection_set_path})
-        if wait_timeout_sec > 0:
-            result = queue.wait_for_result(command_id, wait_timeout_sec)
-            if result is None:
-                return {"status": "pending", "result": None, "command_id": command_id, "error": None}
-            if result.ok and result.result is not None:
-                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None}
-            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error"}
-        return {"status": "pending", "result": None, "command_id": command_id, "error": None}
+        payload = {str(identifier_key): identifier_value}  # type: ignore[index]
+        return _enqueue_and_maybe_wait(queue, "collection_set.remove", payload, wait_timeout_sec, deprecation)
 
     # Should not reach here
-    return {"status": "error", "result": None, "command_id": None, "error": "Unhandled function"}
+    return {"status": "error", "result": None, "command_id": None, "error": "Unhandled function", "deprecation": deprecation}
 
 
 # ---------------------------
@@ -836,22 +389,22 @@ def get_collection_tool() -> mcp_types.Tool:
                 "function": {
                     "type": "string",
                     "enum": ["list", "create", "edit", "delete"],  # 'remove' accepted at runtime as alias
-                    "description": "Collection action to perform"
+                    "description": "Collection action to perform",
                 },
                 "args": {
                     "type": "object",
                     "description": "Arguments for the selected function",
-                    "additionalProperties": True
+                    "additionalProperties": True,
                 },
                 "wait_timeout_sec": {
                     "type": ["number", "null"],
                     "minimum": 0,
                     "default": 5,
-                    "description": "Wait for plugin result; 0 to return immediately"
-                }
+                    "description": "Wait for plugin result; 0 to return immediately",
+                },
             },
             "required": ["function"],
-            "additionalProperties": False
+            "additionalProperties": False,
         },
         outputSchema={
             "type": "object",
@@ -859,7 +412,7 @@ def get_collection_tool() -> mcp_types.Tool:
                 "status": {
                     "type": "string",
                     "enum": ["ok", "pending", "error"],
-                    "description": "Operation status"
+                    "description": "Operation status",
                 },
                 "result": {
                     "type": ["object", "null"],
@@ -870,64 +423,62 @@ def get_collection_tool() -> mcp_types.Tool:
                         "edit: { updated, collection }. "
                         "delete: { removed }."
                     ),
-                    "additionalProperties": True
+                    "additionalProperties": True,
                 },
                 "command_id": {
                     "type": ["string", "null"],
-                    "description": "Command identifier for async tracking"
+                    "description": "Command identifier for async tracking",
                 },
                 "error": {
                     "type": ["string", "null"],
-                    "description": "Error message if any"
+                    "description": "Error message if any",
                 },
                 "deprecation": {
                     "type": ["string", "null"],
-                    "description": "Deprecation note when using deprecated alias (e.g., 'remove' -> 'delete')"
-                }
+                    "description": "Deprecation note when using deprecated alias (e.g., 'remove' -> 'delete')",
+                },
             },
             "required": ["status", "result", "command_id", "error"],
-            "additionalProperties": False
-        }
+            "additionalProperties": False,
+        },
     )
 
 
 def handle_collection_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
     """Handle the unified collection tool call.
 
-    Supports function=list|create|edit|delete with corresponding args.
+    Supports function=list|create|edit|delete with corresponding args using unified argument contract.
     Back-compat alias: function='remove' is treated as 'delete' with a deprecation note.
     """
     # Dependency check is deferred until after argument validation to surface schema errors first.
 
+    deprecation: Optional[str] = None
+
     if not arguments or not isinstance(arguments, dict):
-        return {"status": "error", "result": None, "command_id": None, "error": "No arguments provided", "deprecation": None}
+        return {"status": "error", "result": None, "command_id": None, "error": "No arguments provided", "deprecation": deprecation}
 
     func = arguments.get("function")
-    deprecation: Optional[str] = None
     if func == "remove":
         # Backward compatibility: map remove -> delete
         logger.warning("lrc_collection: 'remove' is deprecated; use 'delete' instead.")
         func = "delete"
         deprecation = "Function 'remove' is deprecated; use 'delete' instead."
     if func not in {"list", "create", "edit", "delete"}:
-        return {"status": "error", "result": None, "command_id": None, "error": "Invalid function. Expected one of: list, create, edit, delete", "deprecation": None}
+        return {"status": "error", "result": None, "command_id": None, "error": "Invalid function. Expected one of: list, create, edit, delete", "deprecation": deprecation}
 
     args = arguments.get("args") or {}
     if not isinstance(args, dict):
-        return {"status": "error", "result": None, "command_id": None, "error": "args must be an object", "deprecation": None}
+        return {"status": "error", "result": None, "command_id": None, "error": "args must be an object", "deprecation": deprecation}
 
-    # Early validation for required parameters to surface schema errors before dependency checks
-    if func == "delete":
-        coll_id = args.get("id")
-        if not coll_id or not isinstance(coll_id, (str, int)):
-            return {"status": "error", "result": None, "command_id": None, "error": "id is required for delete", "deprecation": deprecation}
+    wait_timeout_sec = _normalize_wait_timeout(arguments.get("wait_timeout_sec"))
 
-    wait_timeout_sec = arguments.get("wait_timeout_sec")
-    if wait_timeout_sec is not None:
-        if not isinstance(wait_timeout_sec, (int, float)) or wait_timeout_sec < 0:
-            wait_timeout_sec = 5
-    else:
-        wait_timeout_sec = 5
+    # Normalize arguments for unified contract (edit/delete id/path)
+    identifier_key: Optional[str] = None
+    identifier_value: Optional[str] = None
+    if func in {"edit", "delete"}:
+        identifier_key, identifier_value, id_err = _extract_target_identifier(args, "collection_path")
+        if id_err:
+            return {"status": "error", "result": None, "command_id": None, "error": f"{id_err} for {func}", "deprecation": deprecation}
 
     # Perform dependency check after basic validation
     dependency_error = _check_lightroom_dependency()
@@ -937,106 +488,66 @@ def handle_collection_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
             "result": None,
             "command_id": None,
             "error": dependency_error.get("error") if isinstance(dependency_error, dict) else "Lightroom dependency check failed",
-            "deprecation": deprecation
+            "deprecation": deprecation,
         }
 
     queue = get_queue()
 
     # list
     if func == "list":
-        # Optional filters
-        set_id = args.get("set_id")
-        if set_id is not None and not isinstance(set_id, str):
-            set_id = None
-        name_contains = args.get("name_contains")
-        if name_contains is not None and not isinstance(name_contains, str):
-            name_contains = None
-
-        command_id = queue.enqueue(
-            type="collection.list",
-            payload={"set_id": set_id, "name_contains": name_contains},
-        )
-        if wait_timeout_sec > 0:
-            result = queue.wait_for_result(command_id, wait_timeout_sec)
-            if result is None:
-                return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
-            if result.ok and result.result is not None:
-                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None, "deprecation": deprecation}
-            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error", "deprecation": deprecation}
-        return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
+        payload = _build_collection_list_payload(args)
+        return _enqueue_and_maybe_wait(queue, "collection.list", payload, wait_timeout_sec, deprecation)
 
     # create
     if func == "create":
         name = args.get("name")
         if not name or not isinstance(name, str):
             return {"status": "error", "result": None, "command_id": None, "error": "name is required for create", "deprecation": deprecation}
-        parent_path = args.get("parent_path")
+
+        parent_id = args.get("parent_id")
+        parent_path = args.get("parent_path") or args.get("parent_path")  # Accept legacy name
+        smart = args.get("smart")
+
+        # Precedence: parent_id > parent_path
+        if parent_id is not None and not isinstance(parent_id, str):
+            parent_id = None
         if parent_path is not None and not isinstance(parent_path, str):
             parent_path = None
-        smart = args.get("smart")
         if smart is not None and not isinstance(smart, bool):
             smart = None
 
-        command_id = queue.enqueue(
-            type="collection.create",
-            payload={"name": name, "parent_path": parent_path, "smart": smart},
-        )
-        if wait_timeout_sec > 0:
-            result = queue.wait_for_result(command_id, wait_timeout_sec)
-            if result is None:
-                return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
-            if result.ok and result.result is not None:
-                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None, "deprecation": deprecation}
-            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error", "deprecation": deprecation}
-        return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
+        payload: Dict[str, Any] = {"name": name}
+        if parent_id:
+            payload["parent_id"] = parent_id
+        elif parent_path is not None:
+            payload["parent_path"] = parent_path
+        if smart is not None:
+            payload["smart"] = smart
+
+        return _enqueue_and_maybe_wait(queue, "collection.create", payload, wait_timeout_sec, deprecation)
 
     # edit
     if func == "edit":
-        collection_path = args.get("collection_path")
-        if not collection_path or not isinstance(collection_path, str):
-            return {"status": "error", "result": None, "command_id": None, "error": "collection_path is required for edit", "deprecation": deprecation}
         new_name = args.get("new_name")
         if new_name is not None and not isinstance(new_name, str):
             new_name = None
-        new_parent_path = args.get("new_parent_path")
-        if new_parent_path is not None and not isinstance(new_parent_path, str):
-            new_parent_path = None
+        new_parent_id, new_parent_path = _normalize_new_parent_args(args)
 
-        command_id = queue.enqueue(
-            type="collection.edit",
-            payload={
-                "collection_path": collection_path,
-                "new_name": new_name,
-                "new_parent_path": new_parent_path,
-            },
-        )
-        if wait_timeout_sec > 0:
-            result = queue.wait_for_result(command_id, wait_timeout_sec)
-            if result is None:
-                return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
-            if result.ok and result.result is not None:
-                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None, "deprecation": deprecation}
-            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error", "deprecation": deprecation}
-        return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
+        payload: Dict[str, Any] = {}
+        payload[str(identifier_key)] = identifier_value  # type: ignore[index]
+        if new_name:
+            payload["new_name"] = new_name
+        if new_parent_id:
+            payload["new_parent_id"] = new_parent_id
+        elif new_parent_path is not None:
+            payload["new_parent_path"] = new_parent_path
 
-    # delete (by id)
+        return _enqueue_and_maybe_wait(queue, "collection.edit", payload, wait_timeout_sec, deprecation)
+
+    # delete
     if func == "delete":
-        coll_id = args.get("id")
-        if not coll_id or not isinstance(coll_id, (str, int)):
-            return {"status": "error", "result": None, "command_id": None, "error": "id is required for delete", "deprecation": deprecation}
-
-        command_id = queue.enqueue(
-            type="collection.remove",
-            payload={"id": str(coll_id)},
-        )
-        if wait_timeout_sec > 0:
-            result = queue.wait_for_result(command_id, wait_timeout_sec)
-            if result is None:
-                return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
-            if result.ok and result.result is not None:
-                return {"status": "ok", "result": result.result, "command_id": command_id, "error": None, "deprecation": deprecation}
-            return {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error", "deprecation": deprecation}
-        return {"status": "pending", "result": None, "command_id": command_id, "error": None, "deprecation": deprecation}
+        payload: Dict[str, Any] = {str(identifier_key): identifier_value}  # type: ignore[index]
+        return _enqueue_and_maybe_wait(queue, "collection.remove", payload, wait_timeout_sec, deprecation)
 
     # Should not reach here
     return {"status": "error", "result": None, "command_id": None, "error": "Unhandled function", "deprecation": deprecation}

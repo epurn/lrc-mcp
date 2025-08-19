@@ -19,7 +19,7 @@ sys.path.insert(0, str(src_path))
 from lrc_mcp.server import create_server
 from lrc_mcp.health import get_health_tool
 from lrc_mcp.lightroom import get_launch_lightroom_tool, get_lightroom_version_tool, get_kill_lightroom_tool
-from lrc_mcp.adapters.collections import get_add_collection_tool, get_add_collection_set_tool, get_remove_collection_tool, get_remove_collection_set_tool, get_edit_collection_tool, get_collection_tool
+from lrc_mcp.adapters.collections import get_collection_tool, get_collection_set_tool
 from lrc_mcp.adapters.lightroom import get_check_command_status_tool
 
 
@@ -37,12 +37,8 @@ def test_tool_descriptions():
         get_launch_lightroom_tool(),
         get_lightroom_version_tool(),
         get_kill_lightroom_tool(),
-        get_add_collection_tool(),
-        get_add_collection_set_tool(),
-        get_remove_collection_tool(),
-        get_remove_collection_set_tool(),
-        get_edit_collection_tool(),
         get_collection_tool(),
+        get_collection_set_tool(),
         get_check_command_status_tool(),
     ]
     

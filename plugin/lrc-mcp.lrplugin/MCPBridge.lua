@@ -32,23 +32,64 @@ function MCPBridge.start()
         LrTasks.sleep(0.5)
       elseif statusCode >= 200 and statusCode < 300 then
         local body = respBody or ''
-        local cmd = nil
-        if type(body) == 'string' and #body > 0 then
-          -- Parse command from body
-          Logger.info('Parsing command from body: ' .. tostring(body))
-          local id = body:match('"id"%s*:%s*"([^"]*)"')
-          local ctype = body:match('"type"%s*:%s*"([^"]*)"')
-          -- Fix payload extraction - handle the full JSON object properly
-          local payloadStr = body:match('"payload"%s*:%s*(%b{})')
-          if not payloadStr then
-            -- Try alternative pattern for payload extraction
-            payloadStr = body:match('"payload"%s*:%s*({.*})')
+          local cmd = nil
+          if type(body) == 'string' and #body > 0 then
+            -- Parse command from body
+            Logger.info('Parsing command from body: ' .. tostring(body))
+            local id = body:match('"id"%s*:%s*"([^"]*)"')
+            local ctype = body:match('"type"%s*:%s*"([^"]*)"')
+            -- Extract payload as JSON object and convert to string
+            local payload_start, payload_end = body:find('"payload"%s*:%s*')
+            if payload_start and payload_end then
+              -- Find the start of the payload (after the colon and whitespace)
+              local payload_content_start = payload_end + 1
+              local payload_str = nil
+              
+              -- Check if payload starts with { (object) or [ (array)
+              local first_char = body:sub(payload_content_start, payload_content_start)
+              if first_char == '{' or first_char == '[' then
+                -- Parse JSON object/array by finding matching closing bracket
+                local bracket_stack = 0
+                local in_string = false
+                local escape_next = false
+                local start_pos = payload_content_start
+                
+                for i = payload_content_start, #body do
+                  local char = body:sub(i, i)
+                  if not escape_next then
+                    if char == '"' then
+                      in_string = not in_string
+                    elseif not in_string then
+                      if char == '{' or char == '[' then
+                        bracket_stack = bracket_stack + 1
+                      elseif char == '}' or char == ']' then
+                        bracket_stack = bracket_stack - 1
+                        if bracket_stack <= 0 then
+                          payload_str = body:sub(start_pos, i)
+                          break
+                        end
+                      end
+                    end
+                  end
+                  escape_next = (char == '\\' and not escape_next)
+                end
+              else
+                -- Handle simple values (null, string, number, boolean)
+                local remaining = body:sub(payload_content_start)
+                local simple_end = remaining:find('[,}]')
+                if simple_end then
+                  payload_str = remaining:sub(1, simple_end - 1)
+                else
+                  payload_str = remaining
+                end
+              end
+              
+              Logger.info('Parsed command - id: ' .. tostring(id) .. ', type: ' .. tostring(ctype) .. ', payload_str: ' .. tostring(payload_str))
+              if id and ctype then
+                cmd = { id = id, type = ctype, payload_raw = payload_str }
+              end
+            end
           end
-          Logger.info('Parsed command - id: ' .. tostring(id) .. ', type: ' .. tostring(ctype) .. ', payloadStr: ' .. tostring(payloadStr))
-          if id and ctype then
-            cmd = { id = id, type = ctype, payload_raw = payloadStr }
-          end
-        end
         if not cmd then
           -- No commands in body
           LrTasks.sleep(0.5)
@@ -58,24 +99,31 @@ function MCPBridge.start()
             cmdOk, resultTable, errMsg = CommandHandlers.handle_noop_command()
           elseif cmd.type == 'echo' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_echo_command(cmd.payload_raw)
-          elseif cmd.type == 'collection.create' then
-            cmdOk, resultTable, errMsg = CommandHandlers.handle_create_collection_command(cmd.payload_raw)
-          elseif cmd.type == 'collection_set.create' then
-            cmdOk, resultTable, errMsg = CommandHandlers.handle_create_collection_set_command(cmd.payload_raw)
-          elseif cmd.type == 'collection.list' then
-            cmdOk, resultTable, errMsg = CommandHandlers.handle_list_collections_command(cmd.payload_raw)
-          elseif cmd.type == 'collection_set.list' then
-            cmdOk, resultTable, errMsg = CommandHandlers.handle_list_collection_sets_command(cmd.payload_raw)
-          elseif cmd.type == 'collection.remove' then
-            cmdOk, resultTable, errMsg = CommandHandlers.handle_remove_collection_command(cmd.payload_raw)
-          elseif cmd.type == 'collection.edit' then
-            cmdOk, resultTable, errMsg = CommandHandlers.handle_edit_collection_command(cmd.payload_raw)
-          elseif cmd.type == 'collection_set.edit' then
-            cmdOk, resultTable, errMsg = CommandHandlers.handle_edit_collection_set_command(cmd.payload_raw)
-          elseif cmd.type == 'collection_set.remove' then
-            cmdOk, resultTable, errMsg = CommandHandlers.handle_remove_collection_set_command(cmd.payload_raw)
           elseif cmd.type == 'run_tests' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_run_tests_command()
+          -- Action-specific collection commands
+          elseif cmd.type == 'collection.list' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_collection_list_command(cmd.payload_raw)
+          elseif cmd.type == 'collection.create' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_collection_create_command(cmd.payload_raw)
+          elseif cmd.type == 'collection.edit' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_collection_edit_command(cmd.payload_raw)
+          elseif cmd.type == 'collection.remove' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_collection_remove_command(cmd.payload_raw)
+          -- Action-specific collection set commands
+          elseif cmd.type == 'collection_set.list' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_collection_set_list_command(cmd.payload_raw)
+          elseif cmd.type == 'collection_set.create' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_collection_set_create_command(cmd.payload_raw)
+          elseif cmd.type == 'collection_set.edit' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_collection_set_edit_command(cmd.payload_raw)
+          elseif cmd.type == 'collection_set.remove' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_collection_set_remove_command(cmd.payload_raw)
+          -- Legacy unified handlers for backward compatibility
+          elseif cmd.type == 'collection' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_unified_collection_command(cmd.payload_raw)
+          elseif cmd.type == 'collection_set' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_unified_collection_set_command(cmd.payload_raw)
           else
             cmdOk, resultTable, errMsg = false, nil, 'unknown command type: ' .. tostring(cmd.type)
           end

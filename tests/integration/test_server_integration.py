@@ -57,8 +57,7 @@ class TestServerIntegration:
         from lrc_mcp.health import get_health_tool
         from lrc_mcp.lightroom import get_launch_lightroom_tool, get_lightroom_version_tool
         from lrc_mcp.adapters.collections import (
-            get_add_collection_tool, get_add_collection_set_tool,
-            get_remove_collection_tool, get_edit_collection_tool
+            get_collection_tool, get_collection_set_tool
         )
         
         # Test that all tool definition functions work
@@ -72,17 +71,11 @@ class TestServerIntegration:
         version_tool = get_lightroom_version_tool()
         assert version_tool.name == "lrc_lightroom_version"
         
-        add_collection_tool = get_add_collection_tool()
-        assert add_collection_tool.name == "lrc_add_collection"
+        collection_tool = get_collection_tool()
+        assert collection_tool.name == "lrc_collection"
         
-        add_collection_set_tool = get_add_collection_set_tool()
-        assert add_collection_set_tool.name == "lrc_add_collection_set"
-        
-        remove_collection_tool = get_remove_collection_tool()
-        assert remove_collection_tool.name == "lrc_remove_collection"
-        
-        edit_collection_tool = get_edit_collection_tool()
-        assert edit_collection_tool.name == "lrc_edit_collection"
+        collection_set_tool = get_collection_set_tool()
+        assert collection_set_tool.name == "lrc_collection_set"
 
 
 class TestHTTPIntegration:
@@ -121,8 +114,7 @@ class TestHTTPIntegration:
         from lrc_mcp.health import get_health_tool
         from lrc_mcp.lightroom import get_launch_lightroom_tool, get_lightroom_version_tool
         from lrc_mcp.adapters.collections import (
-            get_add_collection_tool, get_add_collection_set_tool,
-            get_remove_collection_tool, get_edit_collection_tool
+            get_collection_tool, get_collection_set_tool
         )
         
         # Verify all expected tools can be retrieved
@@ -130,10 +122,8 @@ class TestHTTPIntegration:
             ("lrc_mcp_health", get_health_tool),
             ("lrc_launch_lightroom", get_launch_lightroom_tool),
             ("lrc_lightroom_version", get_lightroom_version_tool),
-            ("lrc_add_collection", get_add_collection_tool),
-            ("lrc_add_collection_set", get_add_collection_set_tool),
-            ("lrc_remove_collection", get_remove_collection_tool),
-            ("lrc_edit_collection", get_edit_collection_tool)
+            ("lrc_collection", get_collection_tool),
+            ("lrc_collection_set", get_collection_set_tool),
         ]
         
         for expected_name, tool_getter in expected_tools:
