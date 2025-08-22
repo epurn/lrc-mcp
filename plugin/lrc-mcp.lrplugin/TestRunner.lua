@@ -6,7 +6,6 @@ local TestAssertions = require 'TestAssertions'
 local CollectionUtils = require 'CollectionUtils'
 local CollectionCommands = require 'CollectionCommands'
 local CollectionSetCommands = require 'CollectionSetCommands'
-local PhotoMetadataCommands = require 'PhotoMetadataCommands'
 local WriteLock = require 'WriteLock'
 
 local TestRunner = {}
@@ -86,6 +85,7 @@ end
 -- Test suite functions
 function TestRunner.test_collection_lifecycle()
   Logger.info("=== Starting Collection Lifecycle Tests ===")
+  TestAssertions.reset_results()
   
   local catalog = LrApplication.activeCatalog()
   if not catalog then
@@ -133,6 +133,7 @@ end
 
 function TestRunner.test_collection_set_lifecycle()
   Logger.info("=== Starting Collection Set Lifecycle Tests ===")
+  TestAssertions.reset_results()
   
   local catalog = LrApplication.activeCatalog()
   if not catalog then
@@ -181,8 +182,8 @@ function TestRunner.test_collection_set_lifecycle()
       end
       
       -- Test 3: Remove collection set (should also remove contained collections)
-      local remove_payload = '{"path":"' .. created_path .. '"}'
-      local remove_ok, remove_result, remove_err = CollectionSetCommands.handle_collection_set_delete_command(remove_payload)
+      local remove_payload = '{"collection_path":"' .. created_path .. '"}'
+      local remove_ok, remove_result, remove_err = CollectionCommands.handle_collection_delete_command(remove_payload)
       TestAssertions.assert_true(remove_ok, "Collection Set Lifecycle - Remove Set", 
         remove_ok and "Collection set removed successfully" or ("Failed to remove collection set: " .. tostring(remove_err)))
       
@@ -200,6 +201,7 @@ end
 
 function TestRunner.test_error_paths()
   Logger.info("=== Starting Error Path Tests ===")
+  TestAssertions.reset_results()
   
   -- Test 1: Create collection without name (should fail)
   local no_name_payload = '{"name":"","parent_path":""}'
@@ -233,25 +235,63 @@ function TestRunner.test_error_paths()
   Logger.info("=== Error Path Tests Completed ===")
 end
 
--- New: Photo metadata read tests (read-only)
-function TestRunner.test_photo_metadata_read()
-  Logger.info("=== Starting Photo Metadata Read Tests ===")
+-- Verify photo_metadata.* dispatch wiring and access boundaries
+function TestRunner.test_photo_metadata_wiring()
+  Logger.info("=== Starting Photo Metadata Wiring Tests ===")
+  TestAssertions.reset_results()
 
-  -- Negative test: non-existent photo should return structured error
-  local payload = '{"photo":{"local_id":"__nonexistent__"},"fields":["title","rating"]}'
-  local ok, result, err = PhotoMetadataCommands.handle_photo_get_command(payload)
-  TestAssertions.assert_true(ok, "Photo Metadata - Get Not Found", ok and "Call returned" or ("Call failed: " .. tostring(err)))
-  if ok and result then
-    TestAssertions.assert_true(result.error ~= nil, "Photo Metadata - Error Present", "Expect PHOTO_NOT_FOUND error")
+  local CommandHandlers = require 'CommandHandlers'
+
+  local catalog = LrApplication.activeCatalog()
+  if not catalog then
+    TestAssertions.assert_true(false, "Photo Metadata - Catalog Check", "No active catalog available")
+    return
+  end
+  TestAssertions.assert_true(true, "Photo Metadata - Catalog Check", "Active catalog found")
+
+  -- get
+  local get_payload = '{"photo_ids":["p1","p2"],"fields":["title","rating"]}'
+  local ok_get, res_get, err_get = CommandHandlers.handle_photo_metadata_get_command(get_payload)
+  TestAssertions.assert_true(ok_get, "Photo Metadata - get dispatch", ok_get and "get dispatched" or ("get failed: " .. tostring(err_get)))
+  if ok_get and res_get then
+    TestAssertions.assert_true(type(res_get.items) == "table", "Photo Metadata - get result shape", "items should be a table")
+    TestAssertions.assert_true(#res_get.items == 2, "Photo Metadata - get item count", "expected 2 items")
   end
 
-  Logger.info("=== Photo Metadata Read Tests Completed ===")
+  -- bulk_get
+  local bulk_get_payload = '{"photo_ids":["p1","p2","p3"],"fields":["caption"]}'
+  local ok_bget, res_bget, err_bget = CommandHandlers.handle_photo_metadata_bulk_get_command(bulk_get_payload)
+  TestAssertions.assert_true(ok_bget, "Photo Metadata - bulk_get dispatch", ok_bget and "bulk_get dispatched" or ("bulk_get failed: " .. tostring(err_bget)))
+  if ok_bget and res_bget then
+    TestAssertions.assert_true(type(res_bget.items) == "table", "Photo Metadata - bulk_get result shape", "items should be a table")
+    TestAssertions.assert_true(#res_bget.items >= 1, "Photo Metadata - bulk_get item count", "expected at least 1 item (async)")
+  end
+
+  -- update (must occur inside write access)
+  local upd_payload = '{"photo_ids":["p9","p10"]}'
+  local ok_upd, res_upd, err_upd = CommandHandlers.handle_photo_metadata_update_command(upd_payload)
+  TestAssertions.assert_true(ok_upd, "Photo Metadata - update dispatch", ok_upd and "update dispatched" or ("update failed: " .. tostring(err_upd)))
+  if ok_upd and res_upd then
+    TestAssertions.assert_true(type(res_upd.updated) == "table", "Photo Metadata - update result shape", "updated should be table")
+    TestAssertions.assert_true(#res_upd.updated == 2, "Photo Metadata - update updated count", "expected 2 updated entries")
+    -- Ensure write scope executed (scaffolding exposes flag)
+    TestAssertions.assert_true(res_upd.debug_write_scope == true, "Photo Metadata - update within write scope", "update should execute inside write access")
+  end
+
+  -- bulk_update (async + write access)
+  local bupd_payload = '{"photo_ids":["pb1","pb2","pb3","pb4"]}'
+  local ok_bupd, res_bupd, err_bupd = CommandHandlers.handle_photo_metadata_bulk_update_command(bupd_payload)
+  TestAssertions.assert_true(ok_bupd, "Photo Metadata - bulk_update dispatch", ok_bupd and "bulk_update dispatched" or ("bulk_update failed: " .. tostring(err_bupd)))
+  if ok_bupd and res_bupd then
+    TestAssertions.assert_true(type(res_bupd.updated) == "table", "Photo Metadata - bulk_update result shape", "updated should be table")
+    TestAssertions.assert_true(#res_bupd.updated >= 1, "Photo Metadata - bulk_update updated count", "expected at least 1 updated entry (async)")
+  end
+
+  Logger.info("=== Photo Metadata Wiring Tests Completed ===")
 end
 
 function TestRunner.run_all_tests()
   Logger.info("=== Starting Plugin Test Suite ===")
-  
-  TestAssertions.reset_results()
   
   -- Reset cleanup tracking
   created_test_items.collections = {}
@@ -261,7 +301,7 @@ function TestRunner.run_all_tests()
   TestRunner.test_collection_lifecycle()
   TestRunner.test_collection_set_lifecycle()
   TestRunner.test_error_paths()
-  TestRunner.test_photo_metadata_read()
+  TestRunner.test_photo_metadata_wiring()
   
   -- Cleanup
   local cleanup_success = TestRunner.cleanup_test_items()

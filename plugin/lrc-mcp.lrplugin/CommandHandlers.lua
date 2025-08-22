@@ -3,6 +3,7 @@ local CollectionSetCommands = require 'CollectionSetCommands'
 local UtilityCommands = require 'UtilityCommands'
 local TestCommands = require 'TestCommands'
 local PhotoMetadataCommands = require 'PhotoMetadataCommands'
+local PhotoMetadataCommands = require 'PhotoMetadataCommands'
 
 local CommandHandlers = {}
 
@@ -60,13 +61,21 @@ function CommandHandlers.handle_collection_set_remove_command(payload_raw)
   return CollectionSetCommands.handle_collection_set_remove_command(payload_raw)
 end
 
--- Photo metadata (read-only) dispatchers
-function CommandHandlers.handle_photo_get_command(payload_raw)
-  return PhotoMetadataCommands.handle_photo_get_command(payload_raw)
+-- Photo metadata command dispatchers
+function CommandHandlers.handle_photo_metadata_get_command(payload_raw)
+  return PhotoMetadataCommands.get(payload_raw)
 end
 
-function CommandHandlers.handle_photo_bulk_get_command(payload_raw)
-  return PhotoMetadataCommands.handle_photo_bulk_get_command(payload_raw)
+function CommandHandlers.handle_photo_metadata_bulk_get_command(payload_raw)
+  return PhotoMetadataCommands.bulk_get(payload_raw)
+end
+
+function CommandHandlers.handle_photo_metadata_update_command(payload_raw)
+  return PhotoMetadataCommands.update(payload_raw)
+end
+
+function CommandHandlers.handle_photo_metadata_bulk_update_command(payload_raw)
+  return PhotoMetadataCommands.bulk_update(payload_raw)
 end
 
 return CommandHandlers

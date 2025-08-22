@@ -3,6 +3,7 @@
 .env
 .cursor/
 .clinerules/
+.roo/
 .continue/*
 .venv/
 .vscode/
