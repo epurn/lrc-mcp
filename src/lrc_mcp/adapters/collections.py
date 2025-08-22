@@ -464,6 +464,11 @@ def handle_collection_set_tool(arguments: Dict[str, Any] | None) -> Any:
         page_size = args.get("page_size", 100)
         cursor = args.get("cursor")
         payload = _build_collection_set_list_payload(args)
+        # Pass pagination args through to plugin (Phase 4 native pagination)
+        if cursor is not None:
+            payload["cursor"] = cursor
+        if page_size is not None:
+            payload["page_size"] = page_size
         command_id = queue.enqueue(type="collection_set.list", payload=payload)
         if wait_timeout_sec > 0:
             result = queue.wait_for_result(command_id, wait_timeout_sec)
@@ -484,7 +489,21 @@ def handle_collection_set_tool(arguments: Dict[str, Any] | None) -> Any:
                 ]
                 return guidance, payload_out
             if result.ok and result.result is not None and isinstance(result.result, dict):
-                all_sets = result.result.get("collection_sets") or result.result.get("collectionSets") or []
+                data = result.result
+                # Prefer plugin-native pagination if provided
+                if "nextCursor" in data:
+                    items = data.get("collection_sets") or data.get("items") or []
+                    return _with_optional_deprecation(
+                        {
+                            "status": "ok",
+                            "result": {"collection_sets": items if isinstance(items, list) else []},
+                            "command_id": command_id,
+                            "error": None,
+                            "nextCursor": data.get("nextCursor"),
+                        },
+                        deprecation,
+                    )
+                all_sets = data.get("collection_sets") or data.get("collectionSets") or []
                 if isinstance(all_sets, list):
                     sliced, next_cursor = _paginate_list(all_sets, cursor, page_size)
                     return _with_optional_deprecation(
@@ -786,6 +805,11 @@ def handle_collection_tool(arguments: Dict[str, Any] | None) -> Any:
         page_size = args.get("page_size", 100)
         cursor = args.get("cursor")
         payload = _build_collection_list_payload(args)
+        # Pass pagination args through to plugin (Phase 4 native pagination)
+        if cursor is not None:
+            payload["cursor"] = cursor
+        if page_size is not None:
+            payload["page_size"] = page_size
         command_id = queue.enqueue(type="collection.list", payload=payload)
         if wait_timeout_sec > 0:
             result = queue.wait_for_result(command_id, wait_timeout_sec)
@@ -806,7 +830,21 @@ def handle_collection_tool(arguments: Dict[str, Any] | None) -> Any:
                 ]
                 return guidance, payload_out
             if result.ok and result.result is not None and isinstance(result.result, dict):
-                all_items = result.result.get("collections") or []
+                data = result.result
+                # Prefer plugin-native pagination if provided
+                if "nextCursor" in data:
+                    items = data.get("collections") or data.get("items") or []
+                    return _with_optional_deprecation(
+                        {
+                            "status": "ok",
+                            "result": {"collections": items if isinstance(items, list) else []},
+                            "command_id": command_id,
+                            "error": None,
+                            "nextCursor": data.get("nextCursor"),
+                        },
+                        deprecation,
+                    )
+                all_items = data.get("collections") or []
                 if isinstance(all_items, list):
                     sliced, next_cursor = _paginate_list(all_items, cursor, page_size)
                     return _with_optional_deprecation(

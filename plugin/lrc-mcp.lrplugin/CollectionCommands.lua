@@ -56,16 +56,22 @@ function CollectionCommands.handle_collection_list_command(args)
   local parent_id = nil
   local parent_path = nil
   local name_contains = nil
+  local cursor = nil
+  local page_size = nil
   
   if args then
     if type(args) == 'table' then
       parent_id = args.parent_id or args.set_id  -- Accept legacy name
       parent_path = args.parent_path
       name_contains = args.name_contains
+      cursor = args.cursor
+      page_size = args.page_size
     elseif type(args) == 'string' then
       parent_id = Utils.extract_json_value(args, "parent_id") or Utils.extract_json_value(args, "set_id")
       parent_path = Utils.extract_json_value(args, "parent_path")
       name_contains = Utils.extract_json_value(args, "name_contains")
+      cursor = Utils.extract_json_value(args, "cursor")
+      page_size = Utils.extract_json_value(args, "page_size")
     end
   end
   
@@ -173,7 +179,49 @@ function CollectionCommands.handle_collection_list_command(args)
     
     local list = {}
     collect_from_node(root, list)
-    result = { collections = list }
+
+    -- Stable sort for deterministic pagination: by path, then name
+    table.sort(list, function(a, b)
+      local ap = tostring(a.path or '')
+      local bp = tostring(b.path or '')
+      if ap ~= bp then return ap < bp end
+      local an = tostring(a.name or '')
+      local bn = tostring(b.name or '')
+      return an < bn
+    end)
+
+    local function normalize_page_size(v)
+      local n = tonumber(v)
+      if not n then return 100 end
+      if n < 1 then return 1 end
+      if n > 500 then return 500 end
+      return math.floor(n)
+    end
+
+    local function parse_offset(cur)
+      if type(cur) ~= 'string' then return 0 end
+      if string.sub(cur, 1, 7) == 'offset:' then
+        local s = string.sub(cur, 8)
+        local n = tonumber(s)
+        if n and n >= 0 then return math.floor(n) end
+      end
+      return 0
+    end
+
+    local start = parse_offset(cursor)
+    local size = normalize_page_size(page_size or 100)
+    local total = #list
+    local ending = math.min(total, start + size)
+    local page = {}
+    for i = start + 1, ending do
+      table.insert(page, list[i])
+    end
+    local next_cursor = nil
+    if ending < total then
+      next_cursor = 'offset:' .. tostring(ending)
+    end
+
+    result = { collections = page, nextCursor = next_cursor }
     task_success = true
     task_completed = true
   end, 'List Collections Task')

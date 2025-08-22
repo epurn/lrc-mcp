@@ -81,7 +81,8 @@ def test_tool_descriptions():
             print("✅ Has description")
         
         # Check title presence (prefer tool.title, fallback to annotations.title)
-        title = getattr(tool, "title", None) or (tool.annotations.title if getattr(tool, "annotations", None) else None)
+        annotations = getattr(tool, "annotations", None)
+        title = getattr(tool, "title", None) or getattr(annotations, "title", None)
         if not title or not str(title).strip():
             error = f"❌ {tool_name}: Title missing (tool.title or annotations.title required)"
             errors.append(error)

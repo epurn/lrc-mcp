@@ -63,6 +63,11 @@ def _is_lightroom_running() -> bool:
     return fresh
 
 
+def _to_iso8601_z(dt: datetime) -> str:
+    """Format a datetime as ISO8601 with Z suffix in UTC."""
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 # ---------------------------------
 # Public resource list / templates
 # ---------------------------------
@@ -168,13 +173,53 @@ async def read_resource(uri: str) -> str:
 
 
 async def _read_plugin_log() -> str:
+    """Return enriched plugin log metadata and content as a JSON string.
+
+    Schema:
+      {
+        "contentType": "text/plain",
+        "size": <int>,
+        "lastModified": "<ISO8601 Z or null>",
+        "data": "<text>"
+      }
+    """
     path = _plugin_log_path()
-    if not path.exists():
-        return "Plugin log not found."
+    size: int = 0
+    last_modified_str: Optional[str] = None
+    data: str = ""
+
     try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except Exception as e:
-        return f"Error reading plugin log: {e}"
+        if path.exists():
+            try:
+                stat = path.stat()
+                size = int(stat.st_size)
+                # Use filesystem mtime; coerce to UTC with 'Z' suffix
+                last_modified_str = _to_iso8601_z(datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc))
+            except Exception:
+                # If stat fails for any reason, leave defaults and continue to attempt reading
+                pass
+
+            try:
+                data = path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                # If read fails, keep data as empty string
+                data = ""
+        else:
+            # File missing: keep defaults (size 0, lastModified None, data "")
+            pass
+    except Exception:
+        # Defensive: never raise from a resource read; return structured error-neutral payload
+        size = 0
+        last_modified_str = None
+        data = ""
+
+    payload = {
+        "contentType": "text/plain",
+        "size": size,
+        "lastModified": last_modified_str,
+        "data": data,
+    }
+    return json.dumps(payload, indent=2)
 
 
 async def _read_lightroom_status_json() -> str:
