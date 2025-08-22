@@ -6,6 +6,7 @@ local TestAssertions = require 'TestAssertions'
 local CollectionUtils = require 'CollectionUtils'
 local CollectionCommands = require 'CollectionCommands'
 local CollectionSetCommands = require 'CollectionSetCommands'
+local PhotoMetadataCommands = require 'PhotoMetadataCommands'
 local WriteLock = require 'WriteLock'
 
 local TestRunner = {}
@@ -85,7 +86,6 @@ end
 -- Test suite functions
 function TestRunner.test_collection_lifecycle()
   Logger.info("=== Starting Collection Lifecycle Tests ===")
-  TestAssertions.reset_results()
   
   local catalog = LrApplication.activeCatalog()
   if not catalog then
@@ -133,7 +133,6 @@ end
 
 function TestRunner.test_collection_set_lifecycle()
   Logger.info("=== Starting Collection Set Lifecycle Tests ===")
-  TestAssertions.reset_results()
   
   local catalog = LrApplication.activeCatalog()
   if not catalog then
@@ -182,8 +181,8 @@ function TestRunner.test_collection_set_lifecycle()
       end
       
       -- Test 3: Remove collection set (should also remove contained collections)
-      local remove_payload = '{"collection_path":"' .. created_path .. '"}'
-      local remove_ok, remove_result, remove_err = CollectionCommands.handle_collection_delete_command(remove_payload)
+      local remove_payload = '{"path":"' .. created_path .. '"}'
+      local remove_ok, remove_result, remove_err = CollectionSetCommands.handle_collection_set_delete_command(remove_payload)
       TestAssertions.assert_true(remove_ok, "Collection Set Lifecycle - Remove Set", 
         remove_ok and "Collection set removed successfully" or ("Failed to remove collection set: " .. tostring(remove_err)))
       
@@ -201,7 +200,6 @@ end
 
 function TestRunner.test_error_paths()
   Logger.info("=== Starting Error Path Tests ===")
-  TestAssertions.reset_results()
   
   -- Test 1: Create collection without name (should fail)
   local no_name_payload = '{"name":"","parent_path":""}'
@@ -293,6 +291,8 @@ end
 function TestRunner.run_all_tests()
   Logger.info("=== Starting Plugin Test Suite ===")
   
+  TestAssertions.reset_results()
+  
   -- Reset cleanup tracking
   created_test_items.collections = {}
   created_test_items.collection_sets = {}
@@ -301,7 +301,11 @@ function TestRunner.run_all_tests()
   TestRunner.test_collection_lifecycle()
   TestRunner.test_collection_set_lifecycle()
   TestRunner.test_error_paths()
+<<<<<<< HEAD
   TestRunner.test_photo_metadata_wiring()
+=======
+  TestRunner.test_photo_metadata_read()
+>>>>>>> main
   
   -- Cleanup
   local cleanup_success = TestRunner.cleanup_test_items()
@@ -313,11 +317,7 @@ function TestRunner.run_all_tests()
     "Total Tests: %d\n" ..
     "Passed: %d\n" ..
     "Failed: %d\n" ..
-    "Cleanup: %s",
     results.total, results.passed, results.failed, 
-    cleanup_success and "SUCCESS" or "FAILED"
-  )
-  
   Logger.info(summary)
   
   -- Show dialog with results

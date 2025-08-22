@@ -3,6 +3,7 @@ local CollectionSetCommands = require 'CollectionSetCommands'
 local UtilityCommands = require 'UtilityCommands'
 local TestCommands = require 'TestCommands'
 local PhotoMetadataCommands = require 'PhotoMetadataCommands'
+local PhotoMetadataCommands = require 'PhotoMetadataCommands'
 
 local CommandHandlers = {}
 

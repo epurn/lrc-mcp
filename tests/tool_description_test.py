@@ -21,6 +21,7 @@ from lrc_mcp.health import get_health_tool
 from lrc_mcp.lightroom import get_launch_lightroom_tool, get_lightroom_version_tool, get_kill_lightroom_tool
 from lrc_mcp.adapters.collections import get_collection_tool, get_collection_set_tool
 from lrc_mcp.adapters.lightroom import get_check_command_status_tool
+from lrc_mcp.adapters.photo_metadata import get_photo_metadata_tool
 
 
 def test_tool_descriptions():
@@ -40,6 +41,7 @@ def test_tool_descriptions():
         get_collection_tool(),
         get_collection_set_tool(),
         get_check_command_status_tool(),
+        get_photo_metadata_tool(),
     ]
     
     print("Testing tool descriptions for LLM discoverability...")
