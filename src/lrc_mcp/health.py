@@ -12,7 +12,13 @@ def get_health_tool() -> mcp_types.Tool:
     """Get the health check tool definition."""
     return mcp_types.Tool(
         name="lrc_mcp_health",
+        title="Lightroom MCP Health",
         description="Does check the health status of the lrc-mcp server. Returns server status, current time, and version information. Use this to verify the server is running properly.",
+        annotations=mcp_types.ToolAnnotations(
+            title="Health",
+            readOnlyHint=True,
+            idempotentHint=True,
+        ),
         inputSchema={
             "type": "object",
             "properties": {},
@@ -25,6 +31,11 @@ def get_health_tool() -> mcp_types.Tool:
                 "status": {"type": "string", "enum": ["ok"], "description": "Server health status - always 'ok' when server is running"},
                 "serverTime": {"type": "string", "format": "date-time", "description": "Current server time in ISO-8601 format"},
                 "version": {"type": "string", "description": "Server version number"},
+                "errorCode": {
+                    "type": ["string", "null"],
+                    "enum": ["NOT_FOUND", "VALIDATION", "DEPENDENCY_NOT_RUNNING", "TIMEOUT", "UNKNOWN"],
+                    "description": "Structured error code for non-transport errors (optional)"
+                },
             },
             "required": ["status", "serverTime", "version"],
             "additionalProperties": False,

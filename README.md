@@ -52,6 +52,64 @@ uvicorn lrc_mcp.http_server:app --host 127.0.0.1 --port 8765 --reload
 - `check_command_status`: Does check the status of a previously submitted asynchronous command. Returns current status and result information. Input: `{ command_id }`. Returns `{ status: "pending"|"running"|"completed"|"failed", result, error, progress }`.
 - `lrc_photo_metadata`: Does read-only photo metadata retrieval for single or multiple photos. Inputs include function (`get`|`bulk_get`), args with photo identifier(s) and requested fields, and optional `wait_timeout_sec`. Returns deterministic normalized results with per-item errors for bulk and honors timeouts.
 
+### Resources and Subscriptions
+
+The server exposes static resources and resource templates and supports subscriptions for change notifications.
+
+Resources:
+- lrc://logs/plugin (text) — enriched JSON string with metadata and content:
+  {
+    "contentType": "text/plain",
+    "size": 1234,
+    "lastModified": "2025-01-01T00:00:00Z",
+    "data": "…log text…"
+  }
+  Notes:
+  - size is bytes; lastModified is UTC ISO8601 with Z; data is UTF‑8 text (errors ignored).
+  - Missing/empty file returns size 0; lastModified is null when file missing.
+
+- lrc://status/lightroom (JSON) — current Lightroom/process status snapshot
+- lrc://catalog/collections (JSON) — current collections tree snapshot
+
+Resource templates:
+- lrc://collection/{id}
+- lrc://collection_set/{id}
+- lrc://collection/by-path/{path}
+- lrc://collection_set/by-path/{path}
+
+By-path usage requires URL encoding. Examples:
+- Collection path Sets/Landscapes/2024 → lrc://collection/by-path/Sets%2FLandscapes%2F2024
+- Collection set Client Work/Acme Co → lrc://collection_set/by-path/Client%20Work%2FAcme%20Co
+
+Subscriptions:
+- The server publishes notifications/resources/updated when resources change.
+- Watchers run in the background:
+  - logs/plugin: fires on plugin log mtime/size changes
+  - status/lightroom: fires on heartbeat freshness updates
+  - catalog/collections: fires when a new snapshot diff is observed via the command queue
+- Caveat (SDK capability): Some MCP SDKs may advertise subscribeResource capability as false in UI metadata. Subscriptions still work; clients can call subscribe_resource and unsubscribe_resource regardless. If a client does not implement subscriptions, polling read_resource remains compatible.
+
+Pseudo-usage (conceptual):
+- subscribe: subscribe_resource("lrc://logs/plugin")
+- receive: notifications/resources/updated with the same URI on change
+- unsubscribe: unsubscribe_resource("lrc://logs/plugin")
+
+### Pagination
+
+Adapters pass through plugin-native pagination for collections and collection sets. Items are deterministically ordered; when the plugin provides cursors, the server returns items and nextCursor as-is. When absent, a fallback opaque cursor offset:N is used.
+
+Loop example (conceptual):
+- req1: lrc_collection list with {"args": {"page_size": 100}}
+  → { "items": [...], "nextCursor": "offset:100" } (or plugin-native)
+- while nextCursor:
+  - reqN: lrc_collection list with {"args": {"cursor": nextCursor, "page_size": 100}}
+  - accumulate items until nextCursor is null/absent
+
+Behavior:
+- Deterministic ordering guarantees stable traversal.
+- nextCursor chaining stops when there are no more items.
+- Fallback cursors are opaque; treat them as tokens.
+
 ### HTTP bridge (Step 4 foundation)
 Endpoints for the plugin:
 - `POST /plugin/heartbeat` — send heartbeat beacons.

@@ -340,7 +340,13 @@ def get_check_command_status_tool() -> mcp_types.Tool:
     """Get the check command status tool definition."""
     return mcp_types.Tool(
         name="check_command_status",
+        title="Check Async Command Status",
         description="Does check the status of a previously submitted asynchronous command. Returns current status and result information. Input: { command_id }. Returns { status: pending|running|completed|failed, result, error, progress }.",
+        annotations=mcp_types.ToolAnnotations(
+            title="Command Status",
+            readOnlyHint=True,
+            idempotentHint=True,
+        ),
         inputSchema={
             "type": "object",
             "properties": {
@@ -355,7 +361,12 @@ def get_check_command_status_tool() -> mcp_types.Tool:
                 "status": {"type": "string", "enum": ["pending", "running", "completed", "failed"], "description": "Current status of the command"},
                 "result": {"type": ["object", "null"], "description": "Command result data if completed successfully"},
                 "error": {"type": ["string", "null"], "description": "Error message if command failed"},
-                "progress": {"type": ["integer", "null"], "minimum": 0, "maximum": 100, "description": "Progress percentage (0-100) if available"}
+                "progress": {"type": ["integer", "null"], "minimum": 0, "maximum": 100, "description": "Progress percentage (0-100) if available"},
+                "errorCode": {
+                    "type": ["string", "null"],
+                    "enum": ["NOT_FOUND", "VALIDATION", "DEPENDENCY_NOT_RUNNING", "TIMEOUT", "UNKNOWN"],
+                    "description": "Structured error code for non-transport errors (optional)"
+                }
             },
             "required": ["status"],
             "additionalProperties": False,
@@ -370,7 +381,8 @@ def handle_check_command_status_tool(arguments: dict | None) -> dict:
             "status": "failed",
             "error": "No arguments provided",
             "result": None,
-            "progress": None
+            "progress": None,
+            "errorCode": "VALIDATION",
         }
     
     command_id = arguments.get("command_id")
@@ -379,7 +391,8 @@ def handle_check_command_status_tool(arguments: dict | None) -> dict:
             "status": "failed",
             "error": "command_id is required and must be a string",
             "result": None,
-            "progress": None
+            "progress": None,
+            "errorCode": "VALIDATION",
         }
     
     # Get the command queue
@@ -402,7 +415,8 @@ def handle_check_command_status_tool(arguments: dict | None) -> dict:
                 "status": "failed",
                 "result": None,
                 "error": result.error or "Unknown error",
-                "progress": None
+                "progress": None,
+                "errorCode": "UNKNOWN",
             }
     
     # If no result exists, check if command is still in the queue (pending/running)
