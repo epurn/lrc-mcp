@@ -58,7 +58,7 @@ def _check_lightroom_dependency() -> Dict[str, Any] | None:
 # Internal helper functions
 # -------------------------
 
-def _normalize_wait_timeout(value: Any, default: float = 5) -> float:
+def _normalize_wait_timeout(value: Any, default: float = 15) -> float:
     """Normalize wait timeout to a non-negative float, fallback to default."""
     if value is None:
         return default
@@ -299,7 +299,7 @@ def get_collection_set_tool() -> mcp_types.Tool:
                 "wait_timeout_sec": {
                     "type": ["number", "null"],
                     "minimum": 0,
-                    "default": 5,
+                    "default": 15,
                     "description": "Wait for plugin result; 0 to return immediately",
                 },
             },
@@ -628,7 +628,7 @@ def get_collection_tool() -> mcp_types.Tool:
                 "wait_timeout_sec": {
                     "type": ["number", "null"],
                     "minimum": 0,
-                    "default": 5,
+                    "default": 15,
                     "description": "Wait for plugin result; 0 to return immediately",
                 },
             },

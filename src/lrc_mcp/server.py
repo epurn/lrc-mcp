@@ -6,6 +6,7 @@ References:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Dict, List
 
@@ -123,15 +124,15 @@ def create_server(version: str) -> Server:
         if name == "lrc_kill_lightroom":
             return handle_kill_lightroom_tool(arguments)
         if name == "lrc_collection_set":
-            return handle_collection_set_tool(arguments)
+            return await asyncio.to_thread(handle_collection_set_tool, arguments)
         if name == "lrc_collection":
-            return handle_collection_tool(arguments)
+            return await asyncio.to_thread(handle_collection_tool, arguments)
         if name == "check_command_status":
             return handle_check_command_status_tool(arguments)
         if name == "lrc_run_tests":
             return handle_run_tests_tool(arguments)
         if name == "lrc_photo_metadata":
-            return handle_photo_metadata_tool(arguments)
+            return await asyncio.to_thread(handle_photo_metadata_tool, arguments)
         raise ValueError(f"Unknown tool: {name}")
 
     return server
