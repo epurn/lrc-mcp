@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 
 import logging
 import mcp.types as mcp_types
+from pydantic import AnyUrl
+from typing import cast
 
 from lrc_mcp.services.lrc_bridge import get_queue, get_store
 
@@ -68,7 +70,7 @@ def _normalize_wait_timeout(value: Any, default: float = 5) -> float:
 def _with_optional_deprecation(
     payload: Dict[str, Any],
     deprecation: Optional[str],
-) -> Dict[str, Any]:
+) -> Any:
     """Attach a deprecation field to payload if provided, else return as-is."""
     if deprecation is not None:
         payload = {**payload, "deprecation": deprecation}
@@ -81,7 +83,7 @@ def _enqueue_and_maybe_wait(
     payload: Dict[str, Any],
     wait_timeout_sec: float,
     deprecation: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> Any:
     """Enqueue a command and optionally wait for a result, returning a normalized response.
 
     Args:
@@ -92,31 +94,55 @@ def _enqueue_and_maybe_wait(
         deprecation: Optional deprecation note to include (collection tool only).
 
     Returns:
-        Normalized tool response dict.
+        Either:
+          - dict structured result, or
+          - (list[ContentBlock], dict) for mixed unstructured + structured guidance/results.
     """
     command_id = queue.enqueue(type=type_name, payload=payload)
 
     if wait_timeout_sec > 0:
         result = queue.wait_for_result(command_id, wait_timeout_sec)
         if result is None:
-            return _with_optional_deprecation(
+            payload = _with_optional_deprecation(
                 {"status": "pending", "result": None, "command_id": command_id, "error": None},
                 deprecation,
             )
+            guidance = [
+                mcp_types.TextContent(
+                    type="text",
+                    text=f"Operation enqueued. Use check_command_status with command_id '{command_id}' to poll status."
+                ),
+                mcp_types.TextContent(
+                    type="text",
+                    text="Plugin logs: lrc://logs/plugin"
+                ),
+            ]
+            return guidance, payload
         if result.ok and result.result is not None:
             return _with_optional_deprecation(
                 {"status": "ok", "result": result.result, "command_id": command_id, "error": None},
                 deprecation,
             )
         return _with_optional_deprecation(
-            {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error"},
+            {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error", "errorCode": "UNKNOWN"},
             deprecation,
         )
 
-    return _with_optional_deprecation(
+    payload = _with_optional_deprecation(
         {"status": "pending", "result": None, "command_id": command_id, "error": None},
         deprecation,
     )
+    guidance = [
+        mcp_types.TextContent(
+            type="text",
+            text=f"Operation enqueued. Use check_command_status with command_id '{command_id}' to poll status."
+        ),
+        mcp_types.TextContent(
+            type="text",
+            text="Plugin logs: lrc://logs/plugin"
+        ),
+    ]
+    return guidance, payload
 
 
 def _extract_target_identifier(args: Dict[str, Any], path_alias_key: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -204,6 +230,40 @@ def _normalize_new_parent_args(args: Dict[str, Any]) -> Tuple[Optional[str], Opt
     return new_parent_id, new_parent_path
 
 
+def _parse_page_size(value: Any, default: int = 100) -> int:
+    """Parse page_size with bounds 1..500."""
+    try:
+        n = int(value)
+        if n < 1:
+            return 1
+        if n > 500:
+            return 500
+        return n
+    except Exception:
+        return default
+
+
+def _parse_cursor(value: Any) -> int:
+    """Parse cursor in the form 'offset:N' and return integer offset."""
+    if not isinstance(value, str):
+        return 0
+    if value.startswith("offset:"):
+        try:
+            return max(0, int(value.split(":", 1)[1]))
+        except Exception:
+            return 0
+    return 0
+
+
+def _paginate_list(items: list[Dict[str, Any]] | list[Any], cursor: Any, page_size: Any) -> tuple[list[Any], Optional[str]]:
+    """Return (slice, nextCursor)."""
+    start = _parse_cursor(cursor)
+    size = _parse_page_size(page_size)
+    end = min(len(items), start + size)
+    next_cursor = f"offset:{end}" if end < len(items) else None
+    return items[start:end], next_cursor
+
+
 # -------------------------------
 # Unified Collection Set Tool API
 # -------------------------------
@@ -215,7 +275,14 @@ def get_collection_set_tool() -> mcp_types.Tool:
     """
     return mcp_types.Tool(
         name="lrc_collection_set",
-        description="Does execute collection set actions in Lightroom Classic via a unified dispatcher. Requires Lightroom to be running with plugin connected. Static functions: list, create, edit, delete.",
+        title="Lightroom Collection Sets",
+        description="Does execute collection set actions in Lightroom Classic via a unified dispatcher. Requires Lightroom to be running with plugin connected. Functions: list, create, edit, delete.",
+        annotations=mcp_types.ToolAnnotations(
+            title="Collection Sets",
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+        ),
         inputSchema={
             "type": "object",
             "properties": {
@@ -237,6 +304,72 @@ def get_collection_set_tool() -> mcp_types.Tool:
                 },
             },
             "required": ["function"],
+            "oneOf": [
+                {
+                    "properties": {
+                        "function": {"const": "list"},
+                        "args": {
+                            "type": "object",
+                            "properties": {
+                                "parent_id": {"type": "string", "title": "Parent Set ID", "description": "Filter by parent collection set ID"},
+                                "parent_path": {"type": "string", "title": "Parent Set Path", "description": "Filter by parent set path"},
+                                "name_contains": {"type": "string", "title": "Name Contains Filter", "description": "Substring filter on set names"},
+                                "cursor": {"type": "string", "title": "Pagination Cursor"},
+                                "page_size": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100, "title": "Page Size"},
+                            },
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["args"],
+                },
+                {
+                    "properties": {
+                        "function": {"const": "create"},
+                        "args": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "title": "Set Name"},
+                                "parent_id": {"type": "string", "title": "Parent Set ID"},
+                                "parent_path": {"type": "string", "title": "Parent Set Path"},
+                            },
+                            "required": ["name"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["args"],
+                },
+                {
+                    "properties": {
+                        "function": {"const": "edit"},
+                        "args": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "title": "Target Set ID"},
+                                "path": {"type": "string", "title": "Target Set Path"},
+                                "new_name": {"type": "string", "title": "New Name"},
+                                "new_parent_id": {"type": "string", "title": "New Parent Set ID"},
+                                "new_parent_path": {"type": "string", "title": "New Parent Set Path"},
+                            },
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["args"],
+                },
+                {
+                    "properties": {
+                        "function": {"const": "delete"},
+                        "args": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "title": "Target Set ID"},
+                                "path": {"type": "string", "title": "Target Set Path"},
+                            },
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["args"],
+                },
+            ],
             "additionalProperties": False,
         },
         outputSchema={
@@ -263,6 +396,15 @@ def get_collection_set_tool() -> mcp_types.Tool:
                     "type": ["string", "null"],
                     "description": "Deprecation note when using deprecated alias (e.g., 'remove' -> 'delete')",
                 },
+                "errorCode": {
+                    "type": ["string", "null"],
+                    "enum": ["NOT_FOUND", "VALIDATION", "DEPENDENCY_NOT_RUNNING", "TIMEOUT", "UNKNOWN"],
+                    "description": "Structured error code for non-transport errors (optional)"
+                },
+                "nextCursor": {
+                    "type": ["string", "null"],
+                    "description": "Pagination cursor for list operations; null when no more pages"
+                },
             },
             "required": ["status", "result", "command_id", "error"],
             "additionalProperties": False,
@@ -270,7 +412,7 @@ def get_collection_set_tool() -> mcp_types.Tool:
     )
 
 
-def handle_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
+def handle_collection_set_tool(arguments: Dict[str, Any] | None) -> Any:
     """Handle the unified collection set tool call.
 
     Supports function=list|create|edit|delete with corresponding args using unified argument contract.
@@ -278,7 +420,7 @@ def handle_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str, An
     deprecation: Optional[str] = None
 
     if not arguments or not isinstance(arguments, dict):
-        return {"status": "error", "result": None, "command_id": None, "error": "No arguments provided", "deprecation": deprecation}
+        return {"status": "error", "result": None, "command_id": None, "error": "No arguments provided", "deprecation": deprecation, "errorCode": "VALIDATION"}
 
     func = arguments.get("function")
     if func == "remove":
@@ -287,11 +429,11 @@ def handle_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str, An
         func = "delete"
         deprecation = "Function 'remove' is deprecated; use 'delete' instead."
     if func not in {"list", "create", "edit", "delete"}:
-        return {"status": "error", "result": None, "command_id": None, "error": "Invalid function. Expected one of: list, create, edit, delete", "deprecation": deprecation}
+        return {"status": "error", "result": None, "command_id": None, "error": "Invalid function. Expected one of: list, create, edit, delete", "deprecation": deprecation, "errorCode": "VALIDATION"}
 
     args = arguments.get("args") or {}
     if not isinstance(args, dict):
-        return {"status": "error", "result": None, "command_id": None, "error": "args must be an object", "deprecation": deprecation}
+        return {"status": "error", "result": None, "command_id": None, "error": "args must be an object", "deprecation": deprecation, "errorCode": "VALIDATION"}
 
     # For edit/delete, validate identifier presence before dependency check
     identifier_key: Optional[str] = None
@@ -299,7 +441,7 @@ def handle_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str, An
     if func in {"edit", "delete"}:
         identifier_key, identifier_value, id_err = _extract_target_identifier(args, "collection_set_path")
         if id_err:
-            return {"status": "error", "result": None, "command_id": None, "error": f"{id_err} for {func}", "deprecation": deprecation}
+            return {"status": "error", "result": None, "command_id": None, "error": f"{id_err} for {func}", "deprecation": deprecation, "errorCode": "VALIDATION"}
 
     # Perform dependency check after argument validation to surface schema errors first
     dependency_error = _check_lightroom_dependency()
@@ -310,6 +452,7 @@ def handle_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str, An
             "command_id": None,
             "error": dependency_error.get("error") if isinstance(dependency_error, dict) else "Lightroom dependency check failed",
             "deprecation": deprecation,
+            "errorCode": "DEPENDENCY_NOT_RUNNING",
         }
 
     wait_timeout_sec = _normalize_wait_timeout(arguments.get("wait_timeout_sec"))
@@ -317,13 +460,73 @@ def handle_collection_set_tool(arguments: Dict[str, Any] | None) -> Dict[str, An
     queue = get_queue()
 
     if func == "list":
+        # Accept pagination args
+        page_size = args.get("page_size", 100)
+        cursor = args.get("cursor")
         payload = _build_collection_set_list_payload(args)
-        return _enqueue_and_maybe_wait(queue, "collection_set.list", payload, wait_timeout_sec, deprecation)
+        command_id = queue.enqueue(type="collection_set.list", payload=payload)
+        if wait_timeout_sec > 0:
+            result = queue.wait_for_result(command_id, wait_timeout_sec)
+            if result is None:
+                payload_out = _with_optional_deprecation(
+                    {"status": "pending", "result": None, "command_id": command_id, "error": None},
+                    deprecation,
+                )
+                guidance = [
+                    mcp_types.TextContent(
+                        type="text",
+                        text=f"Operation enqueued. Use check_command_status with command_id '{command_id}' to poll status."
+                    ),
+                    mcp_types.TextContent(
+                        type="text",
+                        text="Plugin logs: lrc://logs/plugin"
+                    ),
+                ]
+                return guidance, payload_out
+            if result.ok and result.result is not None and isinstance(result.result, dict):
+                all_sets = result.result.get("collection_sets") or result.result.get("collectionSets") or []
+                if isinstance(all_sets, list):
+                    sliced, next_cursor = _paginate_list(all_sets, cursor, page_size)
+                    return _with_optional_deprecation(
+                        {
+                            "status": "ok",
+                            "result": {"collection_sets": sliced},
+                            "command_id": command_id,
+                            "error": None,
+                            "nextCursor": next_cursor,
+                        },
+                        deprecation,
+                    )
+                # Fallthrough if unexpected shape
+                return _with_optional_deprecation(
+                    {"status": "ok", "result": result.result, "command_id": command_id, "error": None},
+                    deprecation,
+                )
+            return _with_optional_deprecation(
+                {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error", "errorCode": "UNKNOWN"},
+                deprecation,
+            )
+        # Not waiting
+        payload_out = _with_optional_deprecation(
+            {"status": "pending", "result": None, "command_id": command_id, "error": None},
+            deprecation,
+        )
+        guidance = [
+            mcp_types.TextContent(
+                type="text",
+                text=f"Operation enqueued. Use check_command_status with command_id '{command_id}' to poll status."
+            ),
+            mcp_types.TextContent(
+                type="text",
+                text="Plugin logs: lrc://logs/plugin"
+            ),
+        ]
+        return guidance, payload_out
 
     if func == "create":
         name = args.get("name")
         if not name or not isinstance(name, str):
-            return {"status": "error", "result": None, "command_id": None, "error": "name is required for create", "deprecation": deprecation}
+            return {"status": "error", "result": None, "command_id": None, "error": "name is required for create", "deprecation": deprecation, "errorCode": "VALIDATION"}
 
         parent_id = args.get("parent_id")
         parent_path = args.get("parent_path")
@@ -378,10 +581,17 @@ def get_collection_tool() -> mcp_types.Tool:
     """
     return mcp_types.Tool(
         name="lrc_collection",
+        title="Lightroom Collections",
         description=(
             "Does execute collection actions in Lightroom Classic via a unified dispatcher. "
             "Requires Lightroom to be running with plugin connected. Functions: list, create, edit, delete. "
             "Accepts 'remove' as a deprecated alias for 'delete'."
+        ),
+        annotations=mcp_types.ToolAnnotations(
+            title="Collections",
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
         ),
         inputSchema={
             "type": "object",
@@ -404,6 +614,73 @@ def get_collection_tool() -> mcp_types.Tool:
                 },
             },
             "required": ["function"],
+            "oneOf": [
+                {
+                    "properties": {
+                        "function": {"const": "list"},
+                        "args": {
+                            "type": "object",
+                            "properties": {
+                                "parent_id": {"type": "string", "title": "Parent Set ID", "description": "Filter by parent collection set ID"},
+                                "parent_path": {"type": "string", "title": "Parent Set Path", "description": "Filter by parent set path"},
+                                "name_contains": {"type": "string", "title": "Name Contains Filter", "description": "Substring filter on collection names"},
+                                "cursor": {"type": "string", "title": "Pagination Cursor"},
+                                "page_size": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100, "title": "Page Size"},
+                            },
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["args"],
+                },
+                {
+                    "properties": {
+                        "function": {"const": "create"},
+                        "args": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "title": "Collection Name"},
+                                "parent_id": {"type": "string", "title": "Parent Set ID"},
+                                "parent_path": {"type": "string", "title": "Parent Set Path"},
+                                "smart": {"type": "boolean", "title": "Smart Collection"},
+                            },
+                            "required": ["name"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["args"],
+                },
+                {
+                    "properties": {
+                        "function": {"const": "edit"},
+                        "args": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "title": "Target Collection ID"},
+                                "path": {"type": "string", "title": "Target Collection Path"},
+                                "new_name": {"type": "string", "title": "New Name"},
+                                "new_parent_id": {"type": "string", "title": "New Parent Set ID"},
+                                "new_parent_path": {"type": "string", "title": "New Parent Set Path"},
+                            },
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["args"],
+                },
+                {
+                    "properties": {
+                        "function": {"const": "delete"},
+                        "args": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "title": "Target Collection ID"},
+                                "path": {"type": "string", "title": "Target Collection Path"},
+                            },
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["args"],
+                },
+            ],
             "additionalProperties": False,
         },
         outputSchema={
@@ -437,6 +714,15 @@ def get_collection_tool() -> mcp_types.Tool:
                     "type": ["string", "null"],
                     "description": "Deprecation note when using deprecated alias (e.g., 'remove' -> 'delete')",
                 },
+                "errorCode": {
+                    "type": ["string", "null"],
+                    "enum": ["NOT_FOUND", "VALIDATION", "DEPENDENCY_NOT_RUNNING", "TIMEOUT", "UNKNOWN"],
+                    "description": "Structured error code for non-transport errors (optional)"
+                },
+                "nextCursor": {
+                    "type": ["string", "null"],
+                    "description": "Pagination cursor for list operations; null when no more pages"
+                },
             },
             "required": ["status", "result", "command_id", "error"],
             "additionalProperties": False,
@@ -444,7 +730,7 @@ def get_collection_tool() -> mcp_types.Tool:
     )
 
 
-def handle_collection_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
+def handle_collection_tool(arguments: Dict[str, Any] | None) -> Any:
     """Handle the unified collection tool call.
 
     Supports function=list|create|edit|delete with corresponding args using unified argument contract.
@@ -455,7 +741,7 @@ def handle_collection_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
     deprecation: Optional[str] = None
 
     if not arguments or not isinstance(arguments, dict):
-        return {"status": "error", "result": None, "command_id": None, "error": "No arguments provided", "deprecation": deprecation}
+        return {"status": "error", "result": None, "command_id": None, "error": "No arguments provided", "deprecation": deprecation, "errorCode": "VALIDATION"}
 
     func = arguments.get("function")
     if func == "remove":
@@ -464,11 +750,11 @@ def handle_collection_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
         func = "delete"
         deprecation = "Function 'remove' is deprecated; use 'delete' instead."
     if func not in {"list", "create", "edit", "delete"}:
-        return {"status": "error", "result": None, "command_id": None, "error": "Invalid function. Expected one of: list, create, edit, delete", "deprecation": deprecation}
+        return {"status": "error", "result": None, "command_id": None, "error": "Invalid function. Expected one of: list, create, edit, delete", "deprecation": deprecation, "errorCode": "VALIDATION"}
 
     args = arguments.get("args") or {}
     if not isinstance(args, dict):
-        return {"status": "error", "result": None, "command_id": None, "error": "args must be an object", "deprecation": deprecation}
+        return {"status": "error", "result": None, "command_id": None, "error": "args must be an object", "deprecation": deprecation, "errorCode": "VALIDATION"}
 
     wait_timeout_sec = _normalize_wait_timeout(arguments.get("wait_timeout_sec"))
 
@@ -478,7 +764,7 @@ def handle_collection_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
     if func in {"edit", "delete"}:
         identifier_key, identifier_value, id_err = _extract_target_identifier(args, "collection_path")
         if id_err:
-            return {"status": "error", "result": None, "command_id": None, "error": f"{id_err} for {func}", "deprecation": deprecation}
+            return {"status": "error", "result": None, "command_id": None, "error": f"{id_err} for {func}", "deprecation": deprecation, "errorCode": "VALIDATION"}
 
     # Perform dependency check after basic validation
     dependency_error = _check_lightroom_dependency()
@@ -489,20 +775,80 @@ def handle_collection_tool(arguments: Dict[str, Any] | None) -> Dict[str, Any]:
             "command_id": None,
             "error": dependency_error.get("error") if isinstance(dependency_error, dict) else "Lightroom dependency check failed",
             "deprecation": deprecation,
+            "errorCode": "DEPENDENCY_NOT_RUNNING",
         }
 
     queue = get_queue()
 
     # list
     if func == "list":
+        # Accept pagination args
+        page_size = args.get("page_size", 100)
+        cursor = args.get("cursor")
         payload = _build_collection_list_payload(args)
-        return _enqueue_and_maybe_wait(queue, "collection.list", payload, wait_timeout_sec, deprecation)
+        command_id = queue.enqueue(type="collection.list", payload=payload)
+        if wait_timeout_sec > 0:
+            result = queue.wait_for_result(command_id, wait_timeout_sec)
+            if result is None:
+                payload_out = _with_optional_deprecation(
+                    {"status": "pending", "result": None, "command_id": command_id, "error": None},
+                    deprecation,
+                )
+                guidance = [
+                    mcp_types.TextContent(
+                        type="text",
+                        text=f"Operation enqueued. Use check_command_status with command_id '{command_id}' to poll status."
+                    ),
+                    mcp_types.TextContent(
+                        type="text",
+                        text="Plugin logs: lrc://logs/plugin"
+                    ),
+                ]
+                return guidance, payload_out
+            if result.ok and result.result is not None and isinstance(result.result, dict):
+                all_items = result.result.get("collections") or []
+                if isinstance(all_items, list):
+                    sliced, next_cursor = _paginate_list(all_items, cursor, page_size)
+                    return _with_optional_deprecation(
+                        {
+                            "status": "ok",
+                            "result": {"collections": sliced},
+                            "command_id": command_id,
+                            "error": None,
+                            "nextCursor": next_cursor,
+                        },
+                        deprecation,
+                    )
+                return _with_optional_deprecation(
+                    {"status": "ok", "result": result.result, "command_id": command_id, "error": None},
+                    deprecation,
+                )
+            return _with_optional_deprecation(
+                {"status": "error", "result": None, "command_id": command_id, "error": result.error or "Unknown error", "errorCode": "UNKNOWN"},
+                deprecation,
+            )
+        # Not waiting
+        payload_out = _with_optional_deprecation(
+            {"status": "pending", "result": None, "command_id": command_id, "error": None},
+            deprecation,
+        )
+        guidance = [
+            mcp_types.TextContent(
+                type="text",
+                text=f"Operation enqueued. Use check_command_status with command_id '{command_id}' to poll status."
+            ),
+            mcp_types.TextContent(
+                type="text",
+                text="Plugin logs: lrc://logs/plugin"
+            ),
+        ]
+        return guidance, payload_out
 
     # create
     if func == "create":
         name = args.get("name")
         if not name or not isinstance(name, str):
-            return {"status": "error", "result": None, "command_id": None, "error": "name is required for create", "deprecation": deprecation}
+            return {"status": "error", "result": None, "command_id": None, "error": "name is required for create", "deprecation": deprecation, "errorCode": "VALIDATION"}
 
         parent_id = args.get("parent_id")
         parent_path = args.get("parent_path") or args.get("parent_path")  # Accept legacy name

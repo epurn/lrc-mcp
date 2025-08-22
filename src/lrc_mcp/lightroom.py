@@ -18,7 +18,14 @@ def get_launch_lightroom_tool() -> mcp_types.Tool:
     """Get the Lightroom launch tool definition."""
     return mcp_types.Tool(
         name="lrc_launch_lightroom",
-        description="Does launch Lightroom Classic on Windows. Detects and gracefully terminates existing instances before launching. Uses external launcher for job object isolation. Returns process information and launch status.",
+        title="Launch Lightroom Classic",
+        description="Does launch Lightroom Classic on Windows. Accepts optional path. Gracefully closes existing instance before relaunch. Side effects: starts a process; may terminate a running one.",
+        annotations=mcp_types.ToolAnnotations(
+            title="Launch Lightroom",
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+        ),
         inputSchema={
             "type": "object",
             "properties": {"path": {"type": "string", "description": "Optional explicit path to Lightroom.exe. If not provided, uses LRCLASSIC_PATH environment variable or default Windows installation path."}},
@@ -31,6 +38,11 @@ def get_launch_lightroom_tool() -> mcp_types.Tool:
                 "launched": {"type": "boolean", "description": "True if a new process was spawned, False if existing instance was reused"},
                 "pid": {"type": ["integer", "null"], "description": "Process ID of the running Lightroom instance, or null if not available"},
                 "path": {"type": "string", "description": "Resolved path to the Lightroom executable that was launched"},
+                "errorCode": {
+                    "type": ["string", "null"],
+                    "enum": ["NOT_FOUND", "VALIDATION", "DEPENDENCY_NOT_RUNNING", "TIMEOUT", "UNKNOWN"],
+                    "description": "Structured error code for non-transport errors (optional)"
+                },
             },
             "required": ["launched", "pid", "path"],
             "additionalProperties": False,
@@ -42,7 +54,13 @@ def get_lightroom_version_tool() -> mcp_types.Tool:
     """Get the Lightroom version tool definition."""
     return mcp_types.Tool(
         name="lrc_lightroom_version",
-        description="Does return Lightroom Classic version and enhanced process status information. Checks both plugin heartbeat and actual process presence to determine Lightroom status. Essential for verifying Lightroom connectivity before using other tools.",
+        title="Lightroom Version and Status",
+        description="Does return Lightroom Classic version and enhanced process status information. Checks both plugin heartbeat and process presence. Read-only; use to verify connectivity before other operations.",
+        annotations=mcp_types.ToolAnnotations(
+            title="Version/Status",
+            readOnlyHint=True,
+            idempotentHint=True,
+        ),
         inputSchema={
             "type": "object",
             "properties": {},
@@ -56,6 +74,11 @@ def get_lightroom_version_tool() -> mcp_types.Tool:
                 "running": {"type": "boolean", "description": "True if Lightroom process is currently running, False otherwise"},
                 "lr_version": {"type": ["string", "null"], "description": "Detected Lightroom Classic version, or null if not available"},
                 "last_seen": {"type": ["string", "null"], "format": "date-time", "description": "ISO-8601 timestamp of last plugin heartbeat, or null if never seen"},
+                "errorCode": {
+                    "type": ["string", "null"],
+                    "enum": ["NOT_FOUND", "VALIDATION", "DEPENDENCY_NOT_RUNNING", "TIMEOUT", "UNKNOWN"],
+                    "description": "Structured error code for non-transport errors (optional)"
+                },
             },
             "required": ["status", "running", "lr_version", "last_seen"],
             "additionalProperties": False,
@@ -67,7 +90,14 @@ def get_kill_lightroom_tool() -> mcp_types.Tool:
     """Get the Lightroom kill tool definition."""
     return mcp_types.Tool(
         name="lrc_kill_lightroom",
-        description="Does gracefully terminate any running Lightroom Classic process. Sends WM_CLOSE message to Lightroom windows, waits up to 15 seconds for graceful shutdown, then force terminates if needed. Returns termination status and process information.",
+        title="Kill Lightroom Classic",
+        description="Does gracefully terminate Lightroom if running. Sends WM_CLOSE then force kills if needed. Side effects: closes app; irreversible for unsaved state.",
+        annotations=mcp_types.ToolAnnotations(
+            title="Kill Lightroom",
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+        ),
         inputSchema={
             "type": "object",
             "properties": {},
@@ -80,6 +110,11 @@ def get_kill_lightroom_tool() -> mcp_types.Tool:
                 "killed": {"type": "boolean", "description": "True if a Lightroom process was running and successfully terminated, False if no process was running"},
                 "previous_pid": {"type": ["integer", "null"], "description": "Process ID of the terminated Lightroom process, or null if no process was running"},
                 "duration_ms": {"type": "integer", "description": "Time taken for the termination process in milliseconds"},
+                "errorCode": {
+                    "type": ["string", "null"],
+                    "enum": ["NOT_FOUND", "VALIDATION", "DEPENDENCY_NOT_RUNNING", "TIMEOUT", "UNKNOWN"],
+                    "description": "Structured error code for non-transport errors (optional)"
+                },
             },
             "required": ["killed", "previous_pid", "duration_ms"],
             "additionalProperties": False,

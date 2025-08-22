@@ -79,6 +79,25 @@ def test_tool_descriptions():
             print(error)
         else:
             print("✅ Has description")
+        
+        # Check title presence (prefer tool.title, fallback to annotations.title)
+        title = getattr(tool, "title", None) or (tool.annotations.title if getattr(tool, "annotations", None) else None)
+        if not title or not str(title).strip():
+            error = f"❌ {tool_name}: Title missing (tool.title or annotations.title required)"
+            errors.append(error)
+            print(error)
+        else:
+            print(f"✅ Title present: {title}")
+        
+        # Check outputSchema has errorCode property for structured errors
+        output_schema = getattr(tool, "outputSchema", None) or {}
+        has_error_code = isinstance(output_schema, dict) and isinstance(output_schema.get("properties"), dict) and "errorCode" in output_schema["properties"]
+        if not has_error_code:
+            error = f"❌ {tool_name}: outputSchema.properties.errorCode missing"
+            errors.append(error)
+            print(error)
+        else:
+            print("✅ outputSchema.properties.errorCode present")
     
     print("\n" + "=" * 60)
     if errors:

@@ -17,6 +17,7 @@ from typing import Tuple
 import mcp.server.stdio
 from mcp.server import NotificationOptions
 from mcp.server.models import InitializationOptions
+from lrc_mcp.notifications import start_watchers
 
 import uvicorn
 from dotenv import load_dotenv
@@ -31,6 +32,8 @@ async def _run_stdio_server() -> None:
     # Configure logging to stderr so we don't interfere with stdio transport
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     server = create_server(__version__)
+    # Start background resource watchers (logs/status/catalog)
+    start_watchers()
 
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
         await server.run(
@@ -40,7 +43,7 @@ async def _run_stdio_server() -> None:
                 server_name=SERVER_NAME,
                 server_version=__version__,
                 capabilities=server.get_capabilities(
-                    notification_options=NotificationOptions(),
+                    notification_options=NotificationOptions(resources_changed=True),
                     experimental_capabilities={},
                 ),
             ),

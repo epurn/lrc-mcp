@@ -62,10 +62,16 @@ def get_photo_metadata_tool() -> mcp_types.Tool:
     """
     return mcp_types.Tool(
         name="lrc_photo_metadata",
+        title="Lightroom Photo Metadata",
         description=(
             "Does read-only photo metadata retrieval for single or multiple photos. "
             "Functions: get, bulk_get. Inputs include photo identifier(s) and requested field set; optional wait_timeout_sec controls sync/async behavior. "
             "Returns deterministic normalized results with per-item errors for bulk and honors timeouts."
+        ),
+        annotations=mcp_types.ToolAnnotations(
+            title="Photo Metadata",
+            readOnlyHint=True,
+            idempotentHint=True,
         ),
         inputSchema={
             "type": "object",
@@ -88,6 +94,70 @@ def get_photo_metadata_tool() -> mcp_types.Tool:
                 },
             },
             "required": ["function"],
+            "oneOf": [
+                {
+                    "properties": {
+                        "function": {"const": "get"},
+                        "args": {
+                            "type": "object",
+                            "properties": {
+                                "photo": {
+                                    "type": "object",
+                                    "title": "Photo Identifier",
+                                    "description": "Identify the photo by local_id or file_path",
+                                    "properties": {
+                                        "local_id": {"type": "string", "title": "Local ID"},
+                                        "file_path": {"type": "string", "title": "File Path"},
+                                    },
+                                    "additionalProperties": False,
+                                },
+                                "fields": {
+                                    "type": "array",
+                                    "title": "Fields",
+                                    "description": "Subset of fields to retrieve; defaults to all when omitted",
+                                    "items": {"type": "string"},
+                                },
+                            },
+                            "required": ["photo"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["args"],
+                },
+                {
+                    "properties": {
+                        "function": {"const": "bulk_get"},
+                        "args": {
+                            "type": "object",
+                            "properties": {
+                                "photos": {
+                                    "type": "array",
+                                    "title": "Photo Identifiers",
+                                    "description": "Array of photo identifiers; each requires local_id or file_path",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "local_id": {"type": "string", "title": "Local ID"},
+                                            "file_path": {"type": "string", "title": "File Path"},
+                                        },
+                                        "additionalProperties": False,
+                                    },
+                                    "minItems": 1,
+                                },
+                                "fields": {
+                                    "type": "array",
+                                    "title": "Fields",
+                                    "description": "Subset of fields to retrieve; defaults to all when omitted",
+                                    "items": {"type": "string"},
+                                },
+                            },
+                            "required": ["photos"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["args"],
+                },
+            ],
             "additionalProperties": False,
         },
         outputSchema={
@@ -114,6 +184,11 @@ def get_photo_metadata_tool() -> mcp_types.Tool:
                 "error": {
                     "type": ["string", "null"],
                     "description": "Error message if any",
+                },
+                "errorCode": {
+                    "type": ["string", "null"],
+                    "enum": ["NOT_FOUND", "VALIDATION", "DEPENDENCY_NOT_RUNNING", "TIMEOUT", "UNKNOWN"],
+                    "description": "Structured error code for non-transport errors (optional)"
                 },
             },
             "required": ["status", "result", "command_id", "error"],
@@ -222,21 +297,21 @@ def handle_photo_metadata_tool(arguments: Dict[str, Any] | None) -> Dict[str, An
     checks Lightroom dependency, enqueues command(s), and optionally waits.
     """
     if not arguments or not isinstance(arguments, dict):
-        return {"status": "error", "result": None, "command_id": None, "error": "No arguments provided"}
+        return {"status": "error", "result": None, "command_id": None, "error": "No arguments provided", "errorCode": "VALIDATION"}
 
     func = arguments.get("function")
     if func not in {"get", "bulk_get"}:
-        return {"status": "error", "result": None, "command_id": None, "error": "Invalid function. Expected one of: get, bulk_get"}
+        return {"status": "error", "result": None, "command_id": None, "error": "Invalid function. Expected one of: get, bulk_get", "errorCode": "VALIDATION"}
 
     args = arguments.get("args") or {}
     if func == "get":
         err = _validate_get_args(args)
         if err:
-            return {"status": "error", "result": None, "command_id": None, "error": err}
+            return {"status": "error", "result": None, "command_id": None, "error": err, "errorCode": "VALIDATION"}
     else:
         err = _validate_bulk_get_args(args)
         if err:
-            return {"status": "error", "result": None, "command_id": None, "error": err}
+            return {"status": "error", "result": None, "command_id": None, "error": err, "errorCode": "VALIDATION"}
 
     # Dependency check after basic validation
     dependency_error = _check_lightroom_dependency()
@@ -246,6 +321,7 @@ def handle_photo_metadata_tool(arguments: Dict[str, Any] | None) -> Dict[str, An
             "result": None,
             "command_id": None,
             "error": dependency_error.get("error") if isinstance(dependency_error, dict) else "Lightroom dependency check failed",
+            "errorCode": "DEPENDENCY_NOT_RUNNING",
         }
 
     wait_timeout_sec = _normalize_wait_timeout(arguments.get("wait_timeout_sec"))
