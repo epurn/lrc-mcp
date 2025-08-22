@@ -89,7 +89,7 @@ def get_photo_metadata_tool() -> mcp_types.Tool:
                 "wait_timeout_sec": {
                     "type": ["number", "null"],
                     "minimum": 0,
-                    "default": 5,
+                    "default": 15,
                     "description": "Wait for plugin result; 0 to return immediately",
                 },
             },
