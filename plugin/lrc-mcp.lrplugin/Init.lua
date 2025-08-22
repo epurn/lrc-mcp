@@ -17,15 +17,25 @@ end
 local Logger = require 'Logger'
 Logger.info('Init.lua: starting plugin initialization')
 
-local MCPBridge = require 'MCPBridge'
+local ok_mcp, MCPBridge_or_err = pcall(require, 'MCPBridge')
+if not ok_mcp then
+  Logger.error('Init.lua: failed to require MCPBridge: ' .. tostring(MCPBridge_or_err))
+  return true
+end
+local MCPBridge = MCPBridge_or_err
+
 local probe = Logger.test_write()
 Logger.info('lrc_mcp plugin initialized; plugin_write_ok=' .. tostring(probe and probe.plugin_write_ok))
 
 -- Defer starting background work until after init completes, to ensure a yield-safe context.
-LrFunctionContext.postAsyncTaskWithContext('MCP Background Loops', function(context)
-  Logger.debug('Scheduling MCPBridge loops after init')
-  MCPBridge.start()
-end)
+-- Use LrTasks.startAsyncTask to improve reliability of background loop startup.
+LrTasks.startAsyncTask(function()
+  Logger.info('Init.lua: launching MCPBridge loops via LrTasks.startAsyncTask')
+  local ok_start, start_err = pcall(function() MCPBridge.start() end)
+  if not ok_start then
+    Logger.error('Init.lua: MCPBridge.start() failed: ' .. tostring(start_err))
+  end
+end, 'MCP Background Loops')
 
 Logger.info('Init.lua: plugin initialization complete')
 return true

@@ -119,6 +119,15 @@ function MCPBridge.start()
             cmdOk, resultTable, errMsg = CommandHandlers.handle_collection_set_edit_command(cmd.payload_raw)
           elseif cmd.type == 'collection_set.remove' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_collection_set_remove_command(cmd.payload_raw)
+          -- Photo metadata commands
+          elseif cmd.type == 'photo_metadata.get' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_photo_metadata_get_command(cmd.payload_raw)
+          elseif cmd.type == 'photo_metadata.bulk_get' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_photo_metadata_bulk_get_command(cmd.payload_raw)
+          elseif cmd.type == 'photo_metadata.update' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_photo_metadata_update_command(cmd.payload_raw)
+          elseif cmd.type == 'photo_metadata.bulk_update' then
+            cmdOk, resultTable, errMsg = CommandHandlers.handle_photo_metadata_bulk_update_command(cmd.payload_raw)
           -- Legacy unified handlers for backward compatibility
           elseif cmd.type == 'collection' then
             cmdOk, resultTable, errMsg = CommandHandlers.handle_unified_collection_command(cmd.payload_raw)
