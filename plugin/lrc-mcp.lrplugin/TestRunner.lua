@@ -6,6 +6,7 @@ local TestAssertions = require 'TestAssertions'
 local CollectionUtils = require 'CollectionUtils'
 local CollectionCommands = require 'CollectionCommands'
 local CollectionSetCommands = require 'CollectionSetCommands'
+local PhotoMetadataCommands = require 'PhotoMetadataCommands'
 local WriteLock = require 'WriteLock'
 
 local TestRunner = {}
@@ -85,7 +86,6 @@ end
 -- Test suite functions
 function TestRunner.test_collection_lifecycle()
   Logger.info("=== Starting Collection Lifecycle Tests ===")
-  TestAssertions.reset_results()
   
   local catalog = LrApplication.activeCatalog()
   if not catalog then
@@ -133,7 +133,6 @@ end
 
 function TestRunner.test_collection_set_lifecycle()
   Logger.info("=== Starting Collection Set Lifecycle Tests ===")
-  TestAssertions.reset_results()
   
   local catalog = LrApplication.activeCatalog()
   if not catalog then
@@ -182,8 +181,8 @@ function TestRunner.test_collection_set_lifecycle()
       end
       
       -- Test 3: Remove collection set (should also remove contained collections)
-      local remove_payload = '{"collection_path":"' .. created_path .. '"}'
-      local remove_ok, remove_result, remove_err = CollectionCommands.handle_collection_delete_command(remove_payload)
+      local remove_payload = '{"path":"' .. created_path .. '"}'
+      local remove_ok, remove_result, remove_err = CollectionSetCommands.handle_collection_set_delete_command(remove_payload)
       TestAssertions.assert_true(remove_ok, "Collection Set Lifecycle - Remove Set", 
         remove_ok and "Collection set removed successfully" or ("Failed to remove collection set: " .. tostring(remove_err)))
       
@@ -201,7 +200,6 @@ end
 
 function TestRunner.test_error_paths()
   Logger.info("=== Starting Error Path Tests ===")
-  TestAssertions.reset_results()
   
   -- Test 1: Create collection without name (should fail)
   local no_name_payload = '{"name":"","parent_path":""}'
@@ -235,8 +233,25 @@ function TestRunner.test_error_paths()
   Logger.info("=== Error Path Tests Completed ===")
 end
 
+-- New: Photo metadata read tests (read-only)
+function TestRunner.test_photo_metadata_read()
+  Logger.info("=== Starting Photo Metadata Read Tests ===")
+
+  -- Negative test: non-existent photo should return structured error
+  local payload = '{"photo":{"local_id":"__nonexistent__"},"fields":["title","rating"]}'
+  local ok, result, err = PhotoMetadataCommands.handle_photo_get_command(payload)
+  TestAssertions.assert_true(ok, "Photo Metadata - Get Not Found", ok and "Call returned" or ("Call failed: " .. tostring(err)))
+  if ok and result then
+    TestAssertions.assert_true(result.error ~= nil, "Photo Metadata - Error Present", "Expect PHOTO_NOT_FOUND error")
+  end
+
+  Logger.info("=== Photo Metadata Read Tests Completed ===")
+end
+
 function TestRunner.run_all_tests()
   Logger.info("=== Starting Plugin Test Suite ===")
+  
+  TestAssertions.reset_results()
   
   -- Reset cleanup tracking
   created_test_items.collections = {}
@@ -246,6 +261,7 @@ function TestRunner.run_all_tests()
   TestRunner.test_collection_lifecycle()
   TestRunner.test_collection_set_lifecycle()
   TestRunner.test_error_paths()
+  TestRunner.test_photo_metadata_read()
   
   -- Cleanup
   local cleanup_success = TestRunner.cleanup_test_items()

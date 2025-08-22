@@ -38,6 +38,11 @@ from lrc_mcp.adapters.test import (
     handle_run_tests_tool,
 )
 
+from lrc_mcp.adapters.photo_metadata import (
+    get_photo_metadata_tool,
+    handle_photo_metadata_tool,
+)
+
 SERVER_NAME = "lrc_mcp"
 logger = logging.getLogger(__name__)
 
@@ -66,6 +71,7 @@ def create_server(version: str) -> Server:
             get_collection_tool(),
             get_check_command_status_tool(),
             get_run_tests_tool(),
+            get_photo_metadata_tool(),
         ]
 
     @server.call_tool()
@@ -89,6 +95,8 @@ def create_server(version: str) -> Server:
             return handle_check_command_status_tool(arguments)
         if name == "lrc_run_tests":
             return handle_run_tests_tool(arguments)
+        if name == "lrc_photo_metadata":
+            return handle_photo_metadata_tool(arguments)
         raise ValueError(f"Unknown tool: {name}")
 
     return server

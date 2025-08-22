@@ -50,6 +50,7 @@ uvicorn lrc_mcp.http_server:app --host 127.0.0.1 --port 8765 --reload
 - `lrc_remove_collection`: Does remove a collection from Lightroom Classic. Requires Lightroom to be running with plugin connected. Returns removal status and operation information. Input: `{ collection_path, wait_timeout_sec }`. Returns `{ status, removed, command_id, error }`.
 - `lrc_edit_collection`: Does edit (rename/move) a collection in Lightroom Classic. Requires Lightroom to be running with plugin connected. Can change collection name and/or move to different parent. Returns updated collection information and operation status. Input: `{ collection_path, new_name, new_parent_path, wait_timeout_sec }`. Returns `{ status, updated, collection, command_id, error }`.
 - `check_command_status`: Does check the status of a previously submitted asynchronous command. Returns current status and result information. Input: `{ command_id }`. Returns `{ status: "pending"|"running"|"completed"|"failed", result, error, progress }`.
+- `lrc_photo_metadata`: Does read-only photo metadata retrieval for single or multiple photos. Inputs include function (`get`|`bulk_get`), args with photo identifier(s) and requested fields, and optional `wait_timeout_sec`. Returns deterministic normalized results with per-item errors for bulk and honors timeouts.
 
 ### HTTP bridge (Step 4 foundation)
 Endpoints for the plugin:
@@ -182,6 +183,70 @@ src/
     └── main.py          # Application entry point
 tests/                   # Test scripts
 plugin/                  # Lightroom Classic plugin
+```
+
+### Photo metadata tool (E9-S1)
+
+References:
+- MCP docs: https://modelcontextprotocol.io/docs (see also local .resources/MCP-docs)
+- Lightroom SDK: local .resources/LrC (catalog access rules; LrPhoto:getRawMetadata/getFormattedMetadata)
+
+Operational notes:
+- After Python code changes, refresh the MCP server connection so new tools/schemas are recognized.
+- After plugin code changes, kill and restart Lightroom to load the updated plugin. Allow ~10–20s for startup and heartbeat.
+
+Fields supported (read-only): title, caption, keywords, rating, color_label, flag, gps, capture_time
+
+Example (get):
+```
+Input:
+{
+  "function": "get",
+  "args": {
+    "photo": { "local_id": "123" },
+    "fields": ["title","rating","capture_time"]
+  },
+  "wait_timeout_sec": 5
+}
+
+Output (result):
+{
+  "photo": { "local_id": "123", "file_path": null },
+  "result": {
+    "title": "Sample",
+    "caption": null,
+    "keywords": [],
+    "rating": 5,
+    "color_label": "red",
+    "flag": "picked",
+    "gps": { "lat": 37.78, "lon": -122.42, "alt": null },
+    "capture_time": "2024-01-01T00:00:00Z"
+  },
+  "error": null
+}
+```
+
+Example (bulk_get):
+```
+Input:
+{
+  "function": "bulk_get",
+  "args": {
+    "photos": [{ "local_id": "1" }, { "file_path": "C:/photos/a.jpg" }],
+    "fields": ["keywords","rating"]
+  },
+  "wait_timeout_sec": 5
+}
+
+Output (result):
+{
+  "items": [
+    { "photo": { "local_id": "1", "file_path": null }, "result": { "keywords": ["a","b"], "rating": 4 }, "error": null },
+    { "photo": { "local_id": null, "file_path": "C:/photos/a.jpg" }, "result": null, "error": { "code": "PHOTO_NOT_FOUND", "message": "Photo not found" } }
+  ],
+  "errors_aggregated": [{ "index": 2, "code": "PHOTO_NOT_FOUND", "message": "Photo not found" }],
+  "stats": { "requested": 2, "succeeded": 1, "failed": 1, "duration_ms": 12 }
+}
 ```
 
 ### References
